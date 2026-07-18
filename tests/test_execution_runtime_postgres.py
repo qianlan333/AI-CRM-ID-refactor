@@ -35,16 +35,19 @@ from aicrm_next.platform_foundation.external_effects.transactional import (
     enqueue_transactional_external_effect_job,
 )
 from aicrm_next.platform_foundation.internal_events.models import (
+    InternalEventConsumerSpec,
     InternalEventCreateRequest,
     InternalEventOutboxRecord,
 )
 from aicrm_next.platform_foundation.internal_events.outbox import (
     enqueue_internal_event_outbox_in_session,
+    enqueue_transactional_internal_event_outbox,
 )
 from aicrm_next.platform_foundation.internal_events.repository import (
     SQLAlchemyInternalEventRepository,
 )
 from aicrm_next.shared.db_session import get_session_factory
+from aicrm_next.platform_foundation.webhook_inbox.repository import PostgresWebhookInboxRepository
 from scripts.ops.manage_queue_runtime_soak import _evidence_types
 
 
@@ -229,6 +232,109 @@ def test_runtime_snapshot_uses_the_claim_policy_gate() -> None:
         )
     mismatched = {item["lane"]: item for item in read_model.runtime_snapshot()["lanes"]}
     assert mismatched["wecom_interactive"]["eligible"] == 0
+
+
+def test_every_canonical_enqueue_binds_the_current_policy_snapshot() -> None:
+    policy_version = f"queue-v2-dynamic-{uuid4().hex[:12]}"
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO queue_policy_snapshot (policy_version, policy_json, created_by, created_reason)
+            SELECT %s, policy_json, 'pytest', 'dynamic enqueue policy snapshot'
+            FROM queue_policy_snapshot
+            WHERE policy_version = 'queue-v2-test-loopback'
+            """,
+            (policy_version,),
+        )
+        connection.execute(
+            "UPDATE queue_runtime_control SET policy_version = %s WHERE singleton = TRUE",
+            (policy_version,),
+        )
+        connection.execute(
+            "UPDATE queue_lane_policy SET policy_version = %s",
+            (policy_version,),
+        )
+
+    external = _job()
+    transactional_external_request = ExternalEffectCreateRequest(
+        effect_type="test.queue.transactional",
+        adapter_name="test_provider",
+        operation="send",
+        target_type="test_target",
+        target_id=f"target-{uuid4().hex}",
+        business_type="runtime_test",
+        business_id=f"business-{uuid4().hex}",
+        idempotency_key=f"transactional-external-{uuid4().hex}",
+        payload={"execution_scope": "test_loopback"},
+        context=CommandContext(actor_id="pytest", actor_type="system"),
+    )
+    with _connect(autocommit=False) as connection:
+        transactional_external = enqueue_transactional_external_effect_job(
+            connection,
+            transactional_external_request,
+        )
+        connection.commit()
+
+    internal_request = InternalEventCreateRequest(
+        event_type="test.queue.policy",
+        aggregate_type="queue_policy_test",
+        aggregate_id=uuid4().hex,
+        idempotency_key=f"internal-policy-{uuid4().hex}",
+        context=CommandContext(actor_id="pytest", actor_type="system"),
+    )
+    with get_session_factory()() as session:
+        internal_outbox = enqueue_internal_event_outbox_in_session(session, internal_request)
+        session.commit()
+    transactional_internal_request = InternalEventCreateRequest(
+        event_type="test.queue.transactional_policy",
+        aggregate_type="queue_policy_test",
+        aggregate_id=uuid4().hex,
+        idempotency_key=f"transactional-internal-{uuid4().hex}",
+        context=CommandContext(actor_id="pytest", actor_type="system"),
+    )
+    with _connect(autocommit=False) as connection:
+        transactional_internal = enqueue_transactional_internal_event_outbox(
+            connection,
+            transactional_internal_request,
+        )
+        connection.commit()
+
+    direct_event_request = InternalEventCreateRequest(
+        event_type="test.queue.direct_consumer",
+        aggregate_type="queue_policy_test",
+        aggregate_id=uuid4().hex,
+        idempotency_key=f"direct-consumer-{uuid4().hex}",
+        context=CommandContext(actor_id="pytest", actor_type="system"),
+    )
+    _event, direct_runs = SQLAlchemyInternalEventRepository().create_event_with_consumer_runs(
+        direct_event_request,
+        [InternalEventConsumerSpec(consumer_name="queue_policy_test_consumer")],
+    )
+    inbox = PostgresWebhookInboxRepository(_database_url()).upsert_received(
+        provider="wecom",
+        event_family="external_contact",
+        route="/test/queue-policy",
+        method="POST",
+        tenant_id="aicrm",
+        corp_id="corp-test",
+        event_type="change_external_contact",
+        change_type="add_external_contact",
+        external_event_id=f"event-{uuid4().hex}",
+        idempotency_key=f"webhook-policy-{uuid4().hex}",
+        raw_query_json={},
+        raw_headers_json={},
+        raw_body=b"<xml />",
+        payload_xml="<xml />",
+        payload_json={},
+        payload_summary_json={},
+    )
+
+    assert external["policy_version"] == policy_version
+    assert transactional_external.policy_version == policy_version
+    assert internal_outbox["policy_version"] == policy_version
+    assert transactional_internal["policy_version"] == policy_version
+    assert direct_runs[0].policy_version == policy_version
+    assert inbox["policy_version"] == policy_version
 
 
 def test_database_scope_unifies_claim_deadline_and_runtime_metrics() -> None:

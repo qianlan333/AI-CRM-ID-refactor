@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
-from aicrm_next.platform_foundation.internal_events.models import InternalEventCreateRequest
+from aicrm_next.platform_foundation.internal_events.models import DEFAULT_TENANT_ID, InternalEventCreateRequest
 from aicrm_next.platform_foundation.internal_events.outbox import enqueue_internal_event_outbox_in_session
 from aicrm_next.shared.db_session import get_session_factory
 from aicrm_next.shared.sensitive_data import redact_sensitive_text
@@ -161,8 +161,21 @@ class CustomerReadModelRefreshIntentRepository:
             text("SELECT * FROM customer_read_model_refresh_intent WHERE singleton_id = 1 FOR UPDATE")
         ).mappings().one()
         status = _text(current.get("status"))
-        has_owner = status in {"waiting", "running", "retry_wait"} and int(current.get("signal_generation") or 0) > int(
-            current.get("completed_generation") or 0
+        declared_owner = status in {"waiting", "running", "retry_wait"} and int(
+            current.get("signal_generation") or 0
+        ) > int(current.get("completed_generation") or 0)
+        has_owner = declared_owner and self._has_live_signal_owner(
+            session,
+            signal_generation=int(current.get("signal_generation") or 0),
+        )
+        missing_owner_recovered = declared_owner and not has_owner
+        superseded_owner = (
+            self._quarantine_dead_signal_owner(
+                session,
+                signal_generation=int(current.get("signal_generation") or 0),
+            )
+            if missing_owner_recovered
+            else {"outbox_count": 0, "consumer_run_count": 0}
         )
         generation = int(current.get("dirty_generation") or 0) + 1
         root_execution_id = _text(execution_id) or _new_execution_id("refresh")
@@ -178,8 +191,17 @@ class CustomerReadModelRefreshIntentRepository:
                     parent_execution_id = :parent_execution_id,
                     available_at = CASE WHEN :should_signal THEN CURRENT_TIMESTAMP ELSE available_at END,
                     attempt_count = CASE WHEN :should_signal THEN 0 ELSE attempt_count END,
+                    running_generation = CASE WHEN :should_signal THEN 0 ELSE running_generation END,
+                    running_execution_id = CASE WHEN :should_signal THEN '' ELSE running_execution_id END,
+                    running_parent_execution_id = CASE WHEN :should_signal THEN '' ELSE running_parent_execution_id END,
+                    owner_consumer_run_id = CASE WHEN :should_signal THEN NULL ELSE owner_consumer_run_id END,
+                    owner_lease_token = CASE WHEN :should_signal THEN '' ELSE owner_lease_token END,
                     last_source_event_key = :source_event_key,
-                    last_error_code = CASE WHEN :should_signal THEN '' ELSE last_error_code END,
+                    last_error_code = CASE
+                        WHEN :missing_owner_recovered THEN 'missing_signal_owner_recovered'
+                        WHEN :should_signal THEN ''
+                        ELSE last_error_code
+                    END,
                     last_error_message = CASE WHEN :should_signal THEN '' ELSE last_error_message END,
                     row_version = row_version + 1,
                     updated_at = CURRENT_TIMESTAMP
@@ -190,6 +212,7 @@ class CustomerReadModelRefreshIntentRepository:
             {
                 "generation": generation,
                 "should_signal": should_signal,
+                "missing_owner_recovered": missing_owner_recovered,
                 "execution_id": root_execution_id,
                 "parent_execution_id": _text(parent_execution_id),
                 "source_event_key": event_key,
@@ -225,10 +248,180 @@ class CustomerReadModelRefreshIntentRepository:
             "deduplicated": False,
             "generation": generation,
             "signal_created": bool(signal),
+            "missing_owner_recovered": missing_owner_recovered,
+            "superseded_owner": superseded_owner,
             "execution_id": root_execution_id,
             "parent_execution_id": _text(parent_execution_id),
             "intent": _summary(updated),
             "real_external_call_executed": False,
+        }
+
+    @staticmethod
+    def _has_live_signal_owner(session: Session, *, signal_generation: int) -> bool:
+        """Confirm that the coalesced signal still has a claimable durable owner.
+
+        Intent state alone is insufficient: a terminal, held, stale-policy, or
+        missing outbox/consumer row cannot ever complete the projection.  A new
+        source event may safely replace only that local, pre-provider signal.
+        """
+
+        if int(signal_generation or 0) <= 0:
+            return False
+        idempotency_key = f"customer_read_model.refresh.requested:{int(signal_generation)}"
+        return bool(
+            session.execute(
+                text(
+                    """
+                    WITH control AS (
+                        SELECT active_generation, policy_version
+                        FROM queue_runtime_control
+                        WHERE singleton = TRUE
+                    ), live_owner AS (
+                        SELECT 1
+                        FROM internal_event_outbox outbox
+                        CROSS JOIN control
+                        WHERE outbox.tenant_id = :tenant_id
+                          AND outbox.idempotency_key = :idempotency_key
+                          AND outbox.policy_version = control.policy_version
+                          AND outbox.worker_generation IN (0, control.active_generation)
+                          AND outbox.hold_reason = ''
+                          AND outbox.attempt_count < outbox.max_attempts
+                          AND (
+                              outbox.status IN ('pending', 'failed_retryable')
+                              OR (
+                                  outbox.status = 'running'
+                                  AND outbox.lease_token <> ''
+                                  AND outbox.lease_expires_at > CURRENT_TIMESTAMP
+                              )
+                          )
+                        UNION ALL
+                        SELECT 1
+                        FROM internal_event_consumer_run run
+                        JOIN internal_event event ON event.event_id = run.event_id
+                        CROSS JOIN control
+                        WHERE event.tenant_id = :tenant_id
+                          AND event.idempotency_key = :idempotency_key
+                          AND run.consumer_name = :consumer_name
+                          AND run.policy_version = control.policy_version
+                          AND run.worker_generation IN (0, control.active_generation)
+                          AND run.hold_reason = ''
+                          AND run.attempt_count < run.max_attempts
+                          AND (
+                              run.status IN ('pending', 'failed_retryable')
+                              OR (
+                                  run.status = 'running'
+                                  AND run.lease_token <> ''
+                                  AND run.lease_expires_at > CURRENT_TIMESTAMP
+                              )
+                          )
+                    )
+                    SELECT EXISTS(SELECT 1 FROM live_owner)
+                    """
+                ),
+                {
+                    "tenant_id": DEFAULT_TENANT_ID,
+                    "idempotency_key": idempotency_key,
+                    "consumer_name": CUSTOMER_REFRESH_CONSUMER,
+                },
+            ).scalar_one()
+        )
+
+    @staticmethod
+    def _quarantine_dead_signal_owner(session: Session, *, signal_generation: int) -> dict[str, int]:
+        if int(signal_generation or 0) <= 0:
+            return {"outbox_count": 0, "consumer_run_count": 0}
+        idempotency_key = f"customer_read_model.refresh.requested:{int(signal_generation)}"
+        params = {
+            "tenant_id": DEFAULT_TENANT_ID,
+            "idempotency_key": idempotency_key,
+            "consumer_name": CUSTOMER_REFRESH_CONSUMER,
+        }
+        outbox_rows = session.execute(
+            text(
+                """
+                WITH control AS (
+                    SELECT active_generation, policy_version
+                    FROM queue_runtime_control
+                    WHERE singleton = TRUE
+                )
+                UPDATE internal_event_outbox outbox
+                SET status = 'failed_terminal',
+                    hold_reason = 'superseded_missing_signal_owner',
+                    lease_token = '', locked_by = '', locked_at = NULL,
+                    lease_expires_at = NULL, heartbeat_at = NULL,
+                    last_error_code = 'superseded_missing_signal_owner',
+                    last_error_message = '', updated_at = CURRENT_TIMESTAMP
+                FROM control
+                WHERE outbox.tenant_id = :tenant_id
+                  AND outbox.idempotency_key = :idempotency_key
+                  AND (
+                      (
+                          outbox.status IN ('pending', 'failed_retryable')
+                          AND (
+                              outbox.policy_version <> control.policy_version
+                              OR outbox.worker_generation NOT IN (0, control.active_generation)
+                              OR outbox.hold_reason <> ''
+                              OR outbox.attempt_count >= outbox.max_attempts
+                          )
+                      )
+                      OR (
+                          outbox.status = 'running'
+                          AND COALESCE(outbox.lease_expires_at, '-infinity'::timestamptz)
+                              <= CURRENT_TIMESTAMP
+                      )
+                  )
+                RETURNING outbox.id
+                """
+            ),
+            params,
+        ).mappings().fetchall()
+        consumer_rows = session.execute(
+            text(
+                """
+                WITH control AS (
+                    SELECT active_generation, policy_version
+                    FROM queue_runtime_control
+                    WHERE singleton = TRUE
+                ), signal_event AS (
+                    SELECT event_id
+                    FROM internal_event
+                    WHERE tenant_id = :tenant_id
+                      AND idempotency_key = :idempotency_key
+                )
+                UPDATE internal_event_consumer_run run
+                SET status = 'blocked',
+                    hold_reason = 'superseded_missing_signal_owner',
+                    lease_token = '', locked_by = '', locked_at = NULL,
+                    lease_expires_at = NULL, heartbeat_at = NULL,
+                    last_error_code = 'superseded_missing_signal_owner',
+                    last_error_message = '', updated_at = CURRENT_TIMESTAMP
+                FROM control, signal_event
+                WHERE run.event_id = signal_event.event_id
+                  AND run.consumer_name = :consumer_name
+                  AND (
+                      (
+                          run.status IN ('pending', 'failed_retryable')
+                          AND (
+                              run.policy_version <> control.policy_version
+                              OR run.worker_generation NOT IN (0, control.active_generation)
+                              OR run.hold_reason <> ''
+                              OR run.attempt_count >= run.max_attempts
+                          )
+                      )
+                      OR (
+                          run.status = 'running'
+                          AND COALESCE(run.lease_expires_at, '-infinity'::timestamptz)
+                              <= CURRENT_TIMESTAMP
+                      )
+                  )
+                RETURNING run.id
+                """
+            ),
+            params,
+        ).mappings().fetchall()
+        return {
+            "outbox_count": len(outbox_rows),
+            "consumer_run_count": len(consumer_rows),
         }
 
     def claim_latest(

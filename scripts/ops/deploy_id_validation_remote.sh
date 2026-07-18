@@ -634,15 +634,6 @@ python3 scripts/ops/check_unionid_identity_cutover.py \
   --register-existing-conflicts \
   --expected-release-sha "$after_sha" \
   | tee /tmp/aicrm-identity-preflight.json
-# A stale projection cannot repair itself after the deploy guard stops the
-# current internal runtime. Write one durable intent while the currently
-# verified generation still owns claims, then wait only for that queue-owned
-# projection to finish. This command never rebuilds inline or calls a provider.
-python3 scripts/run_customer_read_model_refresh.py \
-  --execute \
-  --source-key "deploy_preflight:${release_run_id}:${release_run_attempt}" \
-  --wait-seconds 180 \
-  | tee /tmp/aicrm-customer-read-model-deploy-preflight.json
 runtime_mutation_started=1
 runtime_transaction_partial=1
 python3 "$release_control_manager" \
@@ -764,13 +755,13 @@ python3 scripts/ops/create_deploy_smoke_session.py issue \
   --output-file "$deploy_smoke_session_file" \
   --ttl-seconds 300 \
   | tee /tmp/aicrm-deploy-smoke-session-issue.json
-admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)
+admin_smoke_sidebar_args=(--include-all-sidebar)
 if ! python scripts/ops/check_admin_read_pages_smoke.py \
   --base-url http://127.0.0.1:5001 \
   --require-admin-cookie \
   --admin-cookie-file "$deploy_smoke_session_file" \
   "${admin_smoke_sidebar_args[@]}" \
-  | tee /tmp/aicrm-admin-read-pages-smoke.json; then
+  | tee /tmp/aicrm-admin-read-pages-pre-runtime-smoke.json; then
   sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
   sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
   exit 1
@@ -791,6 +782,32 @@ if ! python3 scripts/ops/manage_production_runtime_units.py --phase authorize-ru
   exit 1
 fi
 python3 scripts/ops/manage_production_runtime_units.py --phase install-enable-after-web-health --execute
+# The candidate internal runtime is now the sole queue owner. Ask it to repair
+# the local projection through the durable intent and wait for completion;
+# this deploy path never rebuilds inline and never calls a provider.
+python3 scripts/run_customer_read_model_refresh.py \
+  --execute \
+  --source-key "deploy_runtime:${release_run_id}:${release_run_attempt}" \
+  --wait-seconds 180 \
+  | tee /tmp/aicrm-customer-read-model-deploy-runtime.json
+deploy_smoke_session_file="$(mktemp /tmp/aicrm-deploy-strict-smoke-session.XXXXXX)"
+python3 scripts/ops/create_deploy_smoke_session.py issue \
+  --output-file "$deploy_smoke_session_file" \
+  --ttl-seconds 300 \
+  | tee /tmp/aicrm-deploy-strict-smoke-session-issue.json
+if ! python scripts/ops/check_admin_read_pages_smoke.py \
+  --base-url http://127.0.0.1:5001 \
+  --require-admin-cookie \
+  --admin-cookie-file "$deploy_smoke_session_file" \
+  "${admin_smoke_sidebar_args[@]}" \
+  --require-all-data-health-green \
+  | tee /tmp/aicrm-admin-read-pages-smoke.json; then
+  sudo systemctl status openclaw-wecom-postgres.service --no-pager || true
+  sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
+  exit 1
+fi
+revoke_deploy_smoke_session "$deploy_smoke_session_file"
+deploy_smoke_session_file=""
 python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json
 python3 scripts/ops/manage_production_runtime_units.py --phase verify-staged-runtime --execute
 curl -sSf http://127.0.0.1:5001/api/system/health \

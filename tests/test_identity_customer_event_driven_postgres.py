@@ -501,6 +501,54 @@ def test_customer_refresh_coalesces_sources_and_preserves_dirty_during_run() -> 
     assert signal_count == 2
 
 
+def test_customer_refresh_replaces_a_stale_policy_signal_owner_without_inline_work() -> None:
+    repository = CustomerReadModelRefreshIntentRepository()
+    first = repository.mark_dirty(
+        source_event_key="evt-customer-stale-policy-1",
+        source_event_type="identity.resolved",
+    )
+    assert first["signal_created"] is True
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE internal_event_outbox
+            SET policy_version = 'stale-policy'
+            WHERE idempotency_key = %s
+            """,
+            (f"customer_read_model.refresh.requested:{first['generation']}",),
+        )
+
+    recovered = repository.mark_dirty(
+        source_event_key="evt-customer-stale-policy-2",
+        source_event_type="questionnaire.submitted",
+    )
+
+    assert recovered["signal_created"] is True
+    assert recovered["missing_owner_recovered"] is True
+    assert recovered["superseded_owner"] == {
+        "outbox_count": 1,
+        "consumer_run_count": 0,
+    }
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT status, hold_reason, policy_version
+            FROM internal_event_outbox
+            WHERE event_type = %s
+            ORDER BY id
+            """,
+            (CUSTOMER_REFRESH_REQUESTED_EVENT,),
+        ).fetchall()
+        current_policy = connection.execute(
+            "SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE"
+        ).fetchone()["policy_version"]
+    assert len(rows) == 2
+    assert rows[0]["status"] == "failed_terminal"
+    assert rows[0]["hold_reason"] == "superseded_missing_signal_owner"
+    assert rows[1]["status"] == "pending"
+    assert rows[1]["policy_version"] == current_policy
+
+
 def test_customer_refresh_request_is_intent_only_until_internal_consumer() -> None:
     refresh_calls: list[bool] = []
     service = CustomerReadModelRefreshIntentService(

@@ -76,7 +76,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
                 business_type, business_id, source_module, source_route, source_event_id,
                 source_command_id, trace_id, request_id, correlation_id, idempotency_key,
                 execution_id, parent_execution_id, lane, available_at,
-                ordering_key, fairness_key, rate_scope_key,
+                ordering_key, fairness_key, rate_scope_key, policy_version,
                 actor_id, actor_type, risk_level, requires_approval, execution_mode,
                 payload_json, payload_summary_json, status, priority, scheduled_at,
                 attempt_count, max_attempts, created_at, updated_at
@@ -86,7 +86,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
                 :business_type, :business_id, :source_module, :source_route, :source_event_id,
                 :source_command_id, :trace_id, :request_id, :correlation_id, :idempotency_key,
                 :execution_id, :parent_execution_id, :lane, CAST(:available_at AS timestamptz),
-                :ordering_key, :fairness_key, :rate_scope_key,
+                :ordering_key, :fairness_key, :rate_scope_key, (SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE FOR SHARE),
                 :actor_id, :actor_type, :risk_level, :requires_approval, :execution_mode,
                 CAST(:payload_json AS jsonb), CAST(:payload_summary_json AS jsonb), :status,
                 :priority, CAST(:scheduled_at AS timestamptz), 0, :max_attempts,
