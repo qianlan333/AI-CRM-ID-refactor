@@ -532,7 +532,7 @@ git archive "$verified_sha" \
 release_control_manager="$release_control_dir/scripts/ops/manage_production_runtime_units.py"
 release_control_manifest="$release_control_dir/deploy/production_runtime_units.json"
 runtime_generation_marker="/home/ubuntu/.aicrm-queue-runtime-generation.env"
-if sudo test -e "$runtime_generation_marker"; then
+if sudo test -e "$runtime_generation_marker" || sudo test -L "$runtime_generation_marker"; then
   if sudo test -L "$runtime_generation_marker" || ! sudo test -f "$runtime_generation_marker"; then
     echo "queue runtime generation marker must be one regular non-symlink file"
     exit 1

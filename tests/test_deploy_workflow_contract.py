@@ -86,6 +86,7 @@ def test_remote_deploy_repairs_legacy_generation_marker_ownership_before_runtime
     )
     repair = remote_script[repair_index:source_index]
 
+    assert 'sudo test -e "$runtime_generation_marker" || sudo test -L' in repair
     assert 'sudo test -L "$runtime_generation_marker"' in repair
     assert 'sudo test -f "$runtime_generation_marker"' in repair
     assert 'sudo chown --no-dereference ubuntu:ubuntu "$runtime_generation_marker"' in repair
