@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -184,6 +185,9 @@ class _FakeResult:
         return self
 
     def first(self):
+        return self._row
+
+    def one(self):
         return self._row
 
 
@@ -533,6 +537,259 @@ def test_external_effect_backlog_keeps_historical_terminal_evidence_without_perm
     assert result.evidence["historical_failed_terminal_count"] == 7
     assert result.evidence["historical_blocked_count"] == 3
     assert result.evidence["terminal_lookback_hours"] == 24
+
+
+def test_external_effect_backlog_separates_only_strict_id_validation_canary_failures(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    calls = _patch_health_db(
+        monkeypatch,
+        {
+            "failed_retryable_count": 0,
+            "recent_failed_terminal_count": 0,
+            "recent_blocked_count": 0,
+            "historical_failed_terminal_count": 0,
+            "historical_blocked_count": 0,
+            "due_retryable_count": 0,
+            "oldest_failed_retryable_age_seconds": 0,
+            "canary_failed_retryable_count": 0,
+            "canary_failed_terminal_count": 1,
+            "canary_blocked_count": 1,
+        },
+    )
+
+    result = checks._external_effect_failed_retryable_backlog()
+
+    assert result.status == "ok"
+    assert result.evidence["id_validation_canary"] == {
+        "failed_retryable_count": 0,
+        "failed_terminal_count": 1,
+        "blocked_count": 1,
+        "excluded_from_business_health": True,
+        "strict_provenance_required": True,
+    }
+    query = "\n".join(calls)
+    for required_provenance in (
+        "business_type",
+        "business_id",
+        "source_module",
+        "source_route",
+        "trace_id",
+        "request_id",
+        "idempotency_key",
+        "fairness_key",
+        "actor_id",
+        "actor_type",
+        "risk_level",
+        "execution_mode",
+        "max_attempts",
+    ):
+        assert required_provenance in query
+
+
+def test_external_effect_backlog_still_fails_for_ordinary_terminal_effect(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    _patch_health_db(
+        monkeypatch,
+        {
+            "failed_retryable_count": 0,
+            "recent_failed_terminal_count": 1,
+            "recent_blocked_count": 0,
+            "historical_failed_terminal_count": 1,
+            "historical_blocked_count": 0,
+            "due_retryable_count": 0,
+            "oldest_failed_retryable_age_seconds": 0,
+            "canary_failed_retryable_count": 0,
+            "canary_failed_terminal_count": 0,
+            "canary_blocked_count": 0,
+        },
+    )
+
+    result = checks._external_effect_failed_retryable_backlog()
+
+    assert result.status == "fail"
+    assert result.evidence["failed_terminal_count"] == 1
+
+
+def test_wecom_media_health_separates_exclusive_canary_failure_but_keeps_evidence(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    calls = _patch_health_db(
+        monkeypatch,
+        {
+            "total_count": 1,
+            "ready_count": 0,
+            "refresh_due_count": 0,
+            "refreshing_count": 0,
+            "failed_count": 0,
+            "invalid_source_count": 0,
+            "canary_failed_count": 0,
+            "canary_invalid_source_count": 1,
+            "expired_count": 0,
+            "source_gap_count": 0,
+        },
+    )
+
+    result = checks._wecom_media_lease_health()
+
+    assert result.status == "ok"
+    assert result.evidence["canary_invalid_source_count"] == 1
+    query = "\n".join(calls)
+    assert "id_validation_canary_referenced" in query
+    assert "ordinary_job_referenced" in query
+    assert "AND NOT (" in query
+
+
+def test_wecom_media_health_keeps_ordinary_invalid_source_actionable(monkeypatch) -> None:
+    from aicrm_next.data_health import checks
+
+    _patch_health_db(
+        monkeypatch,
+        {
+            "total_count": 1,
+            "ready_count": 0,
+            "refresh_due_count": 0,
+            "refreshing_count": 0,
+            "failed_count": 0,
+            "invalid_source_count": 1,
+            "canary_failed_count": 0,
+            "canary_invalid_source_count": 0,
+            "expired_count": 0,
+            "source_gap_count": 0,
+        },
+    )
+
+    result = checks._wecom_media_lease_health()
+
+    assert result.status == "warn"
+    assert result.evidence["invalid_source_count"] == 1
+
+
+@pytest.mark.postgres
+def test_id_validation_canary_health_isolation_executes_against_postgres(next_pg_schema) -> None:
+    import psycopg
+
+    from aicrm_next.data_health import checks
+
+    database_url = os.environ["DATABASE_URL"]
+    material_id = 2_147_483_647
+    target_id = f"image:{material_id}:image"
+    test_prefix = f"data-health-isolation-{material_id}"
+
+    def plan(*, scenario: str, status: str, strict_canary: bool, target_type: str, target_id: str) -> None:
+        source_module = "scripts.ops.plan_wecom_canary" if strict_canary else "tests.data_health"
+        source_route = "scripts/ops/plan_wecom_canary.py" if strict_canary else "tests/test_data_health_checks.py"
+        prefix = "id-validation-canary" if strict_canary else "ordinary"
+        business_id = f"{test_prefix}-{scenario}"
+        with psycopg.connect(database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO external_effect_job (
+                        effect_type, adapter_name, operation, target_type, target_id,
+                        business_type, business_id, source_module, source_route,
+                        trace_id, request_id, idempotency_key, fairness_key,
+                        actor_id, actor_type, risk_level, execution_mode,
+                        status, max_attempts
+                    ) VALUES (
+                        %s, 'test', 'test', %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, 'execute',
+                        %s, %s
+                    )
+                    """,
+                    (
+                        "wecom.media.upload" if target_type == "media_library_material" else "wecom.profile.update",
+                        target_type,
+                        target_id,
+                        "id_validation_canary" if strict_canary else "ordinary",
+                        business_id,
+                        source_module,
+                        source_route,
+                        f"{prefix}:postgres:{business_id}",
+                        business_id,
+                        f"{prefix}:postgres:{business_id}",
+                        "id_validation_canary" if strict_canary else "ordinary",
+                        "github:codex-test" if strict_canary else "test",
+                        "operator" if strict_canary else "system",
+                        "high" if strict_canary else "medium",
+                        status,
+                        1 if strict_canary else 5,
+                    ),
+                )
+            connection.commit()
+
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM wecom_media_leases WHERE tenant_id = 'aicrm' AND material_kind = 'image' AND material_id = %s AND upload_kind = 'image'",
+                (material_id,),
+            )
+            cursor.execute(
+                "INSERT INTO wecom_media_leases (tenant_id, material_kind, material_id, upload_kind, status) VALUES ('aicrm', 'image', %s, 'image', 'invalid_source')",
+                (material_id,),
+            )
+        connection.commit()
+
+    try:
+        plan(
+            scenario="media",
+            status="failed_terminal",
+            strict_canary=True,
+            target_type="media_library_material",
+            target_id=target_id,
+        )
+        plan(
+            scenario="profile",
+            status="blocked",
+            strict_canary=True,
+            target_type="external_user",
+            target_id="redacted",
+        )
+
+        external = checks._external_effect_failed_retryable_backlog()
+        media = checks._wecom_media_lease_health()
+        assert external.status == "ok"
+        assert external.evidence["id_validation_canary"]["failed_terminal_count"] == 1
+        assert external.evidence["id_validation_canary"]["blocked_count"] == 1
+        assert media.status == "ok"
+        assert media.evidence["canary_invalid_source_count"] == 1
+
+        plan(
+            scenario="ordinary-terminal",
+            status="failed_terminal",
+            strict_canary=False,
+            target_type="external_user",
+            target_id="ordinary",
+        )
+        plan(
+            scenario="ordinary-media-reference",
+            status="queued",
+            strict_canary=False,
+            target_type="media_library_material",
+            target_id=target_id,
+        )
+
+        external = checks._external_effect_failed_retryable_backlog()
+        media = checks._wecom_media_lease_health()
+        assert external.status == "fail"
+        assert external.evidence["failed_terminal_count"] == 1
+        assert media.status == "warn"
+        assert media.evidence["invalid_source_count"] == 1
+    finally:
+        with psycopg.connect(database_url) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM wecom_media_leases WHERE tenant_id = 'aicrm' AND material_kind = 'image' AND material_id = %s AND upload_kind = 'image'",
+                    (material_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM external_effect_job WHERE business_id LIKE %s",
+                    (f"{test_prefix}%",),
+                )
+            connection.commit()
 
 
 def test_retired_runtime_reference_scan_reads_each_source_once(tmp_path, monkeypatch) -> None:
