@@ -73,12 +73,13 @@ def test_customer_refresh_diagnostic_is_read_only_redacted_and_exact_release_bou
     assert 'actual_public_sha" = "$EXPECTED_RELEASE_SHA"' in diagnostic
     assert "git status --porcelain=v1 --untracked-files=all" in diagnostic
     assert "redact_sensitive_text" in diagnostic
+    assert 'session.execute(text("SET TRANSACTION READ ONLY"))' in diagnostic
     assert "customer_read_model_refresh_intent" in diagnostic
     assert "internal_event_consumer_attempt" in diagnostic
     assert "internal_event_outbox" in diagnostic
     for forbidden in (
         "INSERT INTO",
-        "UPDATE customer_",
+        "UPDATE ",
         "DELETE FROM",
         "qyapi.weixin.qq.com",
         "journalctl",

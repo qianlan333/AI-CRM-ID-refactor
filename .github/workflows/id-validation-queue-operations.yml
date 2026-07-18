@@ -170,6 +170,7 @@ jobs:
 
 
             with get_session_factory()() as session:
+                session.execute(text("SET TRANSACTION READ ONLY"))
                 intent = session.execute(
                     text(
                         """
