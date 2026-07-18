@@ -5,6 +5,7 @@ import json
 from aicrm_next.integration_gateway.wecom_group_adapter import WeComGroupMessageAdapter
 from aicrm_next.platform_foundation.external_effects import adapters as effect_adapters
 from aicrm_next.platform_foundation.external_effects.models import ExternalEffectJob, WECOM_MESSAGE_GROUP_SEND
+from aicrm_next.shared.wecom_runtime import classify_wecom_provider_error
 
 
 def _adapter_payload() -> dict:
@@ -33,6 +34,10 @@ def test_group_provider_error_keeps_safe_errcode_and_classification(monkeypatch)
     assert result["provider_errcode"] == 48002
     assert result["provider_error_classification"] == "terminal"
     assert result["retryable"] is False
+
+
+def test_provider_error_60020_is_terminal_ip_trust_configuration() -> None:
+    assert classify_wecom_provider_error(provider_errcode=60020) == ("ip_not_trusted", "terminal")
 
 
 def test_group_provider_malformed_diagnostics_do_not_raise_after_boundary(monkeypatch) -> None:

@@ -44,6 +44,7 @@ TOKEN_INVALID_ERRCODES = {40014, 42001, 42007, 42009}
 RETRYABLE_PROVIDER_ERRCODES = {-1, 45009, 45011}
 TERMINAL_CONFIG_ERRCODES = {40001, 40013, 41001}
 TERMINAL_PERMISSION_ERRCODES = {48002, 60011, 301002}
+TERMINAL_TRUST_ERRCODES = {60020}
 
 
 def _text(value: Any) -> str:
@@ -286,6 +287,8 @@ def classify_wecom_provider_error(
         return ("rate_limited" if provider_errcode in {45009, 45011} else "provider_busy"), "retryable"
     if provider_errcode in TERMINAL_CONFIG_ERRCODES:
         return "config_invalid", "terminal"
+    if provider_errcode in TERMINAL_TRUST_ERRCODES:
+        return "ip_not_trusted", "terminal"
     if provider_errcode in TERMINAL_PERMISSION_ERRCODES:
         return "permission_denied", "terminal"
     if provider_errcode:
