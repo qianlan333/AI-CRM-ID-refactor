@@ -222,10 +222,29 @@ def test_id_validation_deploy_waits_for_successful_ci_fast_on_main() -> None:
         'revoke_deploy_smoke_session "$deploy_smoke_session_file"',
         admin_smoke_index,
     )
-    assert session_issue_index < admin_smoke_index < session_revoke_index
+    runtime_install_index = source.index("--phase install-enable-after-web-health --execute", session_revoke_index)
+    refresh_index = source.index("python3 scripts/run_customer_read_model_refresh.py", runtime_install_index)
+    strict_session_issue_index = source.index(
+        "python3 scripts/ops/create_deploy_smoke_session.py issue",
+        refresh_index,
+    )
+    strict_admin_smoke_index = source.index(
+        "python scripts/ops/check_admin_read_pages_smoke.py",
+        strict_session_issue_index,
+    )
+    strict_session_revoke_index = source.index(
+        'revoke_deploy_smoke_session "$deploy_smoke_session_file"',
+        strict_admin_smoke_index,
+    )
+    assert session_issue_index < admin_smoke_index < session_revoke_index < runtime_install_index
+    assert runtime_install_index < refresh_index < strict_session_issue_index
+    assert strict_session_issue_index < strict_admin_smoke_index < strict_session_revoke_index
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in source
-    assert "admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)" in source
-    assert "tee /tmp/aicrm-admin-read-pages-smoke.json" in source
+    assert "admin_smoke_sidebar_args=(--include-all-sidebar)" in source
+    assert "--require-all-data-health-green" not in source[admin_smoke_index:session_revoke_index]
+    assert "--require-all-data-health-green" in source[strict_admin_smoke_index:strict_session_revoke_index]
+    assert "tee /tmp/aicrm-admin-read-pages-pre-runtime-smoke.json" in source[admin_smoke_index:session_revoke_index]
+    assert "tee /tmp/aicrm-admin-read-pages-smoke.json" in source[strict_admin_smoke_index:strict_session_revoke_index]
 
 
 def test_id_validation_deploy_has_no_manual_or_production_promotion_path() -> None:
