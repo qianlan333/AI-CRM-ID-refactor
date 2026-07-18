@@ -243,7 +243,7 @@ def test_bulk_timeline_upsert_stays_below_postgres_driver_parameter_limit(next_p
             "event_id": f"timeline-parameter-limit-{index}",
             "unionid": f"union-timeline-parameter-limit-{index}",
             "event_type": "parameter_limit_proof",
-            "event_time": "2026-07-18T12:00:00Z",
+            "event_time": "2026-07-18T12:00:00+00:00",
             "title": "参数上限回归",
             "summary": "",
             "source_table": "test_customer_timeline_projection",
