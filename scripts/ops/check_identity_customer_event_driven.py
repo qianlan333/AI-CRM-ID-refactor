@@ -79,11 +79,21 @@ def _code_checks() -> dict[str, bool]:
                     "channel_entry.entered",
                     "customer.phone_bound",
                     "identity.resolved",
+                    "message_archive.batch_ingested",
                     "payment.succeeded",
                     "questionnaire.submitted",
                 )
             )
             and "has_continuation = dirty > int(generation)" in customer_intents
+        ),
+        "archive_source_change_uses_transactional_outbox": (
+            "archive_source_change_recorder_required" in _read("aicrm_next/message_archive/repo.py")
+            and "message_archive.batch_ingested" in _read("scripts/run_incremental_archive_sync.py")
+            and "enqueue_transactional_internal_event_outbox(" in _read("scripts/run_incremental_archive_sync.py")
+        ),
+        "deploy_preflight_waits_on_durable_customer_intent": (
+            "scripts/run_customer_read_model_refresh.py" in _read("scripts/ops/deploy_id_validation_remote.sh")
+            and "--wait-seconds 180" in _read("scripts/ops/deploy_id_validation_remote.sh")
         ),
         "historical_identity_work_is_held_not_replayed": (
             "pre_event_driven_cutover_requires_manual_classification" in migration

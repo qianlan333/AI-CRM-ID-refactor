@@ -1059,6 +1059,22 @@ def test_production_deploy_installs_managed_web_and_checks_runtime_secret_readin
     assert "tee /tmp/aicrm-runtime-secret-readiness.json" in workflow[readiness_index:worker_install_index]
 
 
+def test_deploy_repairs_customer_projection_through_durable_runtime_before_guarding_workers() -> None:
+    workflow = _deploy_contract_source()
+
+    identity_preflight_index = workflow.index("python3 scripts/ops/check_unionid_identity_cutover.py")
+    refresh_intent_index = workflow.index("python3 scripts/run_customer_read_model_refresh.py", identity_preflight_index)
+    mutation_index = workflow.index("runtime_mutation_started=1", refresh_intent_index)
+    begin_index = workflow.index("--phase begin-transaction --execute", mutation_index)
+    refresh_block = workflow[refresh_intent_index:mutation_index]
+
+    assert identity_preflight_index < refresh_intent_index < mutation_index < begin_index
+    assert '--source-key "deploy_preflight:${release_run_id}:${release_run_attempt}"' in refresh_block
+    assert "--wait-seconds 180" in refresh_block
+    assert "run_customer_read_model_refresh.py --execute" not in workflow[mutation_index:]
+    assert "CustomerReadModelRefreshService().run" not in refresh_block
+
+
 def test_id_validation_deploy_keeps_public_route_read_only_and_requires_public_exact_sha():
     workflow = _deploy_contract_source()
 

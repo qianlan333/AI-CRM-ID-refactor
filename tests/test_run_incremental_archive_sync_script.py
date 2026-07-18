@@ -94,4 +94,5 @@ def test_run_incremental_archive_sync_defaults_to_direct_process(monkeypatch, ca
     assert captured["cursor"] == "30651"
     assert captured["limit"] == 100
     assert captured["max_pages"] == 3
+    assert captured["repo"]._source_change_recorder is module._record_archive_source_change
     assert json.loads(capsys.readouterr().out.strip())["reply_monitor_skipped"] is True

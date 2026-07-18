@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from aicrm_next.identity_contact.resolver import resolve_external_userid_with_dbapi
 from aicrm_next.shared.repository_provider import assert_repository_allowed
@@ -332,8 +332,14 @@ class PostgresMessageArchiveReadRepository:
 
 
 class PostgresArchiveSyncRepository:
-    def __init__(self, database_url: str | None = None) -> None:
+    def __init__(
+        self,
+        database_url: str | None = None,
+        *,
+        source_change_recorder: Callable[[Any, int, int], dict[str, Any]] | None = None,
+    ) -> None:
         self._database_url = _psycopg_url(str(database_url or raw_database_url()).strip())
+        self._source_change_recorder = source_change_recorder
 
     def _connect(self):
         import psycopg
@@ -439,6 +445,14 @@ class PostgresArchiveSyncRepository:
                     """,
                     (int(last_seq),),
                 )
+                if inserted:
+                    if self._source_change_recorder is None:
+                        raise RuntimeError("archive_source_change_recorder_required")
+                    self._source_change_recorder(
+                        conn,
+                        int(inserted),
+                        int(last_seq),
+                    )
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -452,10 +466,16 @@ def build_message_archive_repository() -> MessageArchiveRepository:
     return assert_repository_allowed(FixtureMessageArchiveRepository(), capability_owner="message_archive")
 
 
-def build_archive_sync_repository() -> ArchiveSyncRepository:
+def build_archive_sync_repository(
+    *,
+    source_change_recorder: Callable[[Any, int, int], dict[str, Any]] | None = None,
+) -> ArchiveSyncRepository:
     if not production_data_ready():
         raise RuntimeError("archive sync requires PostgreSQL production data mode")
-    return assert_repository_allowed(PostgresArchiveSyncRepository(), capability_owner="message_archive")
+    return assert_repository_allowed(
+        PostgresArchiveSyncRepository(source_change_recorder=source_change_recorder),
+        capability_owner="message_archive",
+    )
 
 
 def read_archive_app_setting(key: str) -> str:

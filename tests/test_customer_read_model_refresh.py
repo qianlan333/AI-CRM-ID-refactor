@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from aicrm_next.customer_read_model.refresh_intents import CUSTOMER_SOURCE_EVENTS
 from aicrm_next.customer_read_model.repo import _coerce_datetime
 from aicrm_next.customer_read_model.refresh import CustomerReadModelRefreshService
+from scripts.run_customer_read_model_refresh import wait_for_refresh_completion
 
 
 class _Source:
@@ -168,3 +170,62 @@ def test_customer_read_model_accepts_postgres_whole_hour_timezone_offset() -> No
     assert whole_hour.isoformat() == "2026-07-16T18:02:25.720198+08:00"
     assert variable_fraction.utcoffset() == timedelta(hours=8)
     assert variable_fraction.isoformat() == "2026-07-16T18:01:43.615700+08:00"
+
+
+def test_customer_read_model_dirty_sources_cover_every_freshness_guard_source() -> None:
+    assert CUSTOMER_SOURCE_EVENTS == (
+        "channel_entry.entered",
+        "customer.phone_bound",
+        "identity.resolved",
+        "message_archive.batch_ingested",
+        "payment.succeeded",
+        "questionnaire.submitted",
+    )
+
+
+class _IntentStateRepository:
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = list(rows)
+        self._last = dict(rows[-1]) if rows else {}
+
+    def get(self) -> dict:
+        if self._rows:
+            self._last = dict(self._rows.pop(0))
+        return dict(self._last)
+
+
+def test_deploy_wait_observes_worker_owned_refresh_and_continuation() -> None:
+    result = wait_for_refresh_completion(
+        _IntentStateRepository(
+            [
+                {"dirty_generation": 7, "completed_generation": 6, "status": "running"},
+                {"dirty_generation": 8, "completed_generation": 7, "status": "waiting"},
+                {"dirty_generation": 8, "completed_generation": 8, "status": "idle"},
+            ]
+        ),
+        target_generation=7,
+        timeout_seconds=1,
+        poll_seconds=0.01,
+    )
+
+    assert result == {
+        "ok": True,
+        "target_generation": 7,
+        "dirty_generation": 8,
+        "completed_generation": 8,
+        "status": "idle",
+    }
+
+
+def test_deploy_wait_fails_closed_for_blocked_refresh() -> None:
+    result = wait_for_refresh_completion(
+        _IntentStateRepository(
+            [{"dirty_generation": 9, "completed_generation": 8, "status": "blocked"}]
+        ),
+        target_generation=9,
+        timeout_seconds=1,
+        poll_seconds=0.01,
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "customer_read_model_refresh_blocked"

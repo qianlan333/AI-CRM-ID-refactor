@@ -39,6 +39,7 @@ def _payload() -> dict[str, object]:
 
 def run_direct() -> str:
     ensure_repo_root_on_path()
+    from aicrm_next.message_archive.repo import PostgresArchiveSyncRepository
     from aicrm_next.message_archive.sync_service import execute_archive_sync
 
     payload = _payload()
@@ -49,8 +50,37 @@ def run_direct() -> str:
         cursor=str(payload["cursor"]),
         limit=int(payload["limit"]),
         max_pages=int(payload["max_pages"]),
+        repo=PostgresArchiveSyncRepository(source_change_recorder=_record_archive_source_change),
     )
     return emit_json(response_payload)
+
+
+def _record_archive_source_change(conn, inserted_count: int, last_seq: int) -> dict[str, object]:
+    """Composition-root adapter for one PII-free transactional source event."""
+
+    from aicrm_next.platform_foundation.command_bus.models import CommandContext
+    from aicrm_next.platform_foundation.internal_events.models import InternalEventCreateRequest
+    from aicrm_next.platform_foundation.internal_events.outbox import enqueue_transactional_internal_event_outbox
+
+    return enqueue_transactional_internal_event_outbox(
+        conn,
+        InternalEventCreateRequest(
+            event_type="message_archive.batch_ingested",
+            aggregate_type="message_archive_sync",
+            aggregate_id=str(int(last_seq)),
+            payload={"inserted_count": int(inserted_count), "last_seq": int(last_seq)},
+            payload_summary={"inserted_count": int(inserted_count), "last_seq": int(last_seq)},
+            context=CommandContext(
+                actor_id="archive_sync",
+                actor_type="system",
+                source_route="scripts.run_incremental_archive_sync",
+            ),
+            idempotency_key=f"message_archive.batch_ingested:{int(last_seq)}",
+            source_module="message_archive.repo",
+            source_command_id=f"archive_sync:{int(last_seq)}",
+            execution_id=f"exe_archive_sync_{int(last_seq)}",
+        ),
+    )
 
 
 def run_http() -> str:
