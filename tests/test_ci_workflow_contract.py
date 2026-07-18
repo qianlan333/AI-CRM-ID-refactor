@@ -59,6 +59,29 @@ def test_ci_fast_uses_selector_and_single_required_result() -> None:
     assert not LEGACY_CI_WORKFLOW.exists()
 
 
+def test_history_sensitive_governance_jobs_fetch_complete_commit_ancestry() -> None:
+    ci_fast = _source(CI_FAST_WORKFLOW)
+    full_regression = _source(FULL_REGRESSION_WORKFLOW)
+
+    architecture_job = ci_fast[
+        ci_fast.index("  architecture-gates:") : ci_fast.index("  fast-python-no-pg:")
+    ]
+    governance_job = full_regression[
+        full_regression.index("  full-governance:") : full_regression.index(
+            "  performance-regression:"
+        )
+    ]
+    python_shard_job = full_regression[
+        full_regression.index("  full-python-shard:") : full_regression.index(
+            "  full-frontend:"
+        )
+    ]
+
+    assert "fetch-depth: 0" in architecture_job
+    assert "fetch-depth: 0" in governance_job
+    assert "fetch-depth: 0" in python_shard_job
+
+
 def test_full_regression_owns_full_pytest_and_full_frontend() -> None:
     source = _source(FULL_REGRESSION_WORKFLOW)
 
