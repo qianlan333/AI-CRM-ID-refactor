@@ -12,6 +12,7 @@ on:
           - verify_owner_state
           - run_test_loopback
           - configure_allowlisted
+          - import_canary_media
           - import_canary_channel
           - ingest_canary_callback
           - arm_canary_callback
@@ -166,7 +167,7 @@ jobs:
           PY
 
       - name: Execute guarded non-spec queue operation on 49
-        if: inputs.operation != 'configure_allowlisted' && inputs.operation != 'run_wecom_canary' && inputs.operation != 'import_canary_channel' && inputs.operation != 'ingest_canary_callback' && inputs.operation != 'arm_canary_callback'
+        if: inputs.operation != 'configure_allowlisted' && inputs.operation != 'import_canary_media' && inputs.operation != 'run_wecom_canary' && inputs.operation != 'import_canary_channel' && inputs.operation != 'ingest_canary_callback' && inputs.operation != 'arm_canary_callback'
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
@@ -178,7 +179,7 @@ jobs:
           script_path: scripts/ops/run_id_validation_queue_operation.sh
 
       - name: Execute guarded canary-spec queue operation on 49
-        if: inputs.operation == 'configure_allowlisted' || inputs.operation == 'run_wecom_canary'
+        if: inputs.operation == 'configure_allowlisted' || inputs.operation == 'import_canary_media' || inputs.operation == 'run_wecom_canary'
         env:
           WECOM_CANARY_SPEC_B64: ${{ secrets.ID_VALIDATION_WECOM_CANARY_SPEC_B64 }}
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5

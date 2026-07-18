@@ -63,7 +63,7 @@ if ! printf '%s' "$queue_job_id" | grep -Eq '^[0-9]+$' || \
   fail "queue job id or expected row version is invalid"
 fi
 case "$queue_operation" in
-  activate_test_loopback|verify_owner_state|run_test_loopback|configure_allowlisted|\
+  activate_test_loopback|verify_owner_state|run_test_loopback|configure_allowlisted|import_canary_media|\
   import_canary_channel|ingest_canary_callback|arm_canary_callback|transition_allowlisted|run_wecom_canary|\
   authorize_execution|attest_execution|fault_listener|\
   fault_worker|fault_database|rollback_test_loopback|soak_start|soak_status|\
@@ -302,6 +302,14 @@ case "$queue_operation" in
       --reason "$reason" \
       --apply \
       --confirmation "CONFIGURE_WECOM_CANARY_${queue_generation}_ENABLE"
+    ;;
+  import_canary_media)
+    require_canary_spec
+    AICRM_WECOM_CANARY_MEDIA_IMPORT_AUTHORIZED=1 python3 scripts/ops/import_wecom_canary_media_asset.py \
+      --spec-file "$spec_file" \
+      "${common_identity[@]}" \
+      --apply \
+      --confirmation "IMPORT_WECOM_CANARY_MEDIA_${queue_generation}"
     ;;
   import_canary_channel)
     require_canary_spec

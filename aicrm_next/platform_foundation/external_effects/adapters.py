@@ -136,6 +136,19 @@ def _safe_error_message(value: Any, *, limit: int = 500) -> str:
     return redact_sensitive_text(value)[: max(0, int(limit))]
 
 
+def _safe_int(value: Any, *, default: int = 0) -> int:
+    if isinstance(value, bool):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_list_count(value: Any) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
 def _wecom_provider_failure(
     exc: Exception,
     *,
@@ -660,13 +673,28 @@ class WeComGroupMessageExternalEffectAdapter:
             "mode": result.get("mode"),
             "operation": result.get("operation"),
             "audit_id": result.get("audit_id"),
-            "requested_chat_count": int(result.get("requested_chat_count") or len(list(result.get("requested_chat_ids") or []))),
+            "requested_chat_count": _safe_int(
+                result.get("requested_chat_count"),
+                default=_safe_list_count(result.get("requested_chat_ids")),
+            ),
             "exact_target_required": bool(result.get("exact_target_required")),
             "exact_target_verified": bool(result.get("exact_target_verified")),
             "wecom_msgid_present": bool(str(result.get("wecom_msgid") or "").strip()),
             "real_external_call_executed": bool(result.get("side_effect_executed")),
             "wecom_send_executed": bool(result.get("side_effect_executed")),
         }
+        provider_result = dict(result.get("result") or {}) if isinstance(result.get("result"), dict) else {}
+        response_summary.update(
+            {
+                "errcode": _safe_int(result.get("provider_errcode") or provider_result.get("errcode")),
+                "errmsg_present": bool(str(provider_result.get("errmsg") or result.get("error_message") or "").strip()),
+                "provider_error_classification": str(result.get("provider_error_classification") or ""),
+                "failed_chat_count": _safe_int(
+                    result.get("failed_chat_count"),
+                    default=_safe_list_count(provider_result.get("fail_list")),
+                ),
+            }
+        )
         if result.get("ok") and result.get("exact_target_verified") is True:
             return ExternalEffectDispatchResult(
                 status="succeeded",
@@ -680,7 +708,7 @@ class WeComGroupMessageExternalEffectAdapter:
             )
         error_code = str(result.get("error_code") or "wecom_group_message_failed").strip()
         return ExternalEffectDispatchResult(
-            status="failed_terminal",
+            status="failed_retryable" if result.get("retryable") is True else "failed_terminal",
             adapter_mode="execute",
             request_summary=request_summary,
             response_summary=response_summary,
