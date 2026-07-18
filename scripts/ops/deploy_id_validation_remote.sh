@@ -605,6 +605,17 @@ python3 -m scripts.ops.ensure_runtime_environment \
   --target-environment "$runtime_target_environment" \
   --public-base-url "$auth_issuer" \
   "${runtime_environment_args[@]}"
+deprecated_runtime_env_keys="$(
+  python3 - <<'PY'
+from scripts.ops.ensure_runtime_environment import DEPRECATED_RUNTIME_ENV_KEYS
+
+print("\n".join(sorted(DEPRECATED_RUNTIME_ENV_KEYS)))
+PY
+)"
+while IFS= read -r deprecated_runtime_env_key; do
+  test -n "$deprecated_runtime_env_key" || continue
+  unset "$deprecated_runtime_env_key"
+done <<< "$deprecated_runtime_env_keys"
 set -a
 source /home/ubuntu/.openclaw-wecom-pg.env
 set +a
