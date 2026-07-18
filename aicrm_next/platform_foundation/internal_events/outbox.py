@@ -99,12 +99,15 @@ def enqueue_transactional_internal_event_outbox(conn: Any, request: InternalEven
             subject_type, subject_id, idempotency_key, actor_id, actor_type,
             source_module, source_route, source_command_id, trace_id, request_id,
             correlation_id, execution_id, parent_execution_id, lane, available_at,
-            ordering_key, fairness_key, occurred_at, payload_json, payload_summary_json,
+            ordering_key, fairness_key, policy_version,
+            occurred_at, payload_json, payload_summary_json,
             status, attempt_count, max_attempts, created_at, updated_at
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s::timestamptz, %s, %s, %s::timestamptz,
+            %s::timestamptz, %s, %s,
+            (SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE FOR SHARE),
+            %s::timestamptz,
             %s::jsonb, %s::jsonb, 'pending', 0, 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )
         ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
@@ -170,7 +173,8 @@ def enqueue_internal_event_outbox_in_session(
                     subject_type, subject_id, idempotency_key, actor_id, actor_type,
                     source_module, source_route, source_command_id, trace_id, request_id,
                     correlation_id, execution_id, parent_execution_id, lane, available_at,
-                    ordering_key, fairness_key, occurred_at, payload_json, payload_summary_json,
+                    ordering_key, fairness_key, policy_version,
+                    occurred_at, payload_json, payload_summary_json,
                     status, attempt_count, max_attempts, created_at, updated_at
                 ) VALUES (
                     :tenant_id, :outbox_id, :event_type, :event_version, :aggregate_type, :aggregate_id,
@@ -178,6 +182,7 @@ def enqueue_internal_event_outbox_in_session(
                     :source_module, :source_route, :source_command_id, :trace_id, :request_id,
                     :correlation_id, :execution_id, :parent_execution_id, :lane,
                     CAST(:available_at AS timestamptz), :ordering_key, :fairness_key,
+                    (SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE FOR SHARE),
                     CAST(:occurred_at AS timestamptz), CAST(:payload_json AS jsonb),
                     CAST(:payload_summary_json AS jsonb), 'pending', 0, 10,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP

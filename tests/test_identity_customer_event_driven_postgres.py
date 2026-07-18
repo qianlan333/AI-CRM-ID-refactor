@@ -501,6 +501,128 @@ def test_customer_refresh_coalesces_sources_and_preserves_dirty_during_run() -> 
     assert signal_count == 2
 
 
+def test_customer_refresh_replaces_a_stale_policy_signal_owner_without_inline_work() -> None:
+    repository = CustomerReadModelRefreshIntentRepository()
+    first = repository.mark_dirty(
+        source_event_key="evt-customer-stale-policy-1",
+        source_event_type="identity.resolved",
+    )
+    assert first["signal_created"] is True
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE internal_event_outbox
+            SET policy_version = 'stale-policy'
+            WHERE idempotency_key = %s
+            """,
+            (f"customer_read_model.refresh.requested:{first['generation']}",),
+        )
+
+    recovered = repository.mark_dirty(
+        source_event_key="evt-customer-stale-policy-2",
+        source_event_type="questionnaire.submitted",
+    )
+
+    assert recovered["signal_created"] is True
+    assert recovered["missing_owner_recovered"] is True
+    assert recovered["superseded_owner"] == {
+        "outbox_count": 1,
+        "consumer_run_count": 0,
+    }
+    with _connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT status, hold_reason, policy_version
+            FROM internal_event_outbox
+            WHERE event_type = %s
+            ORDER BY id
+            """,
+            (CUSTOMER_REFRESH_REQUESTED_EVENT,),
+        ).fetchall()
+        current_policy = connection.execute(
+            "SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE"
+        ).fetchone()["policy_version"]
+    assert len(rows) == 2
+    assert rows[0]["status"] == "failed_terminal"
+    assert rows[0]["hold_reason"] == "superseded_missing_signal_owner"
+    assert rows[1]["status"] == "pending"
+    assert rows[1]["policy_version"] == current_policy
+
+
+def test_customer_refresh_keeps_final_attempt_with_a_live_lease_as_the_single_owner() -> None:
+    repository = CustomerReadModelRefreshIntentRepository()
+    first = repository.mark_dirty(
+        source_event_key="evt-customer-final-attempt-1",
+        source_event_type="identity.resolved",
+    )
+    signal_key = f"customer_read_model.refresh.requested:{first['generation']}"
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE internal_event_outbox
+            SET status = 'running', attempt_count = max_attempts,
+                lease_token = 'lease-final-outbox', locked_by = 'pytest-final-owner',
+                lease_expires_at = CURRENT_TIMESTAMP + INTERVAL '30 seconds'
+            WHERE idempotency_key = %s
+            """,
+            (signal_key,),
+        )
+
+    while_outbox_running = repository.mark_dirty(
+        source_event_key="evt-customer-final-attempt-2",
+        source_event_type="questionnaire.submitted",
+    )
+    assert while_outbox_running["signal_created"] is False
+    assert while_outbox_running["missing_owner_recovered"] is False
+
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE internal_event_outbox
+            SET status = 'pending', attempt_count = 0, lease_token = '', locked_by = '',
+                lease_expires_at = NULL
+            WHERE idempotency_key = %s
+            """,
+            (signal_key,),
+        )
+    internal_registry = build_internal_event_consumer_registry()
+    relayed = InternalEventOutboxRelay(consumer_registry=internal_registry).relay_due(limit=1)
+    assert relayed["counts"]["relayed_count"] == 1
+    with _connect() as connection:
+        running = connection.execute(
+            """
+            UPDATE internal_event_consumer_run run
+            SET status = 'running', attempt_count = max_attempts,
+                lease_token = 'lease-final-consumer', locked_by = 'pytest-final-owner',
+                lease_expires_at = CURRENT_TIMESTAMP + INTERVAL '30 seconds'
+            FROM internal_event event
+            WHERE event.event_id = run.event_id
+              AND event.idempotency_key = %s
+              AND run.consumer_name = 'customer_read_model_refresh_intent_consumer'
+            RETURNING run.id
+            """,
+            (signal_key,),
+        ).fetchone()
+    assert running is not None
+
+    while_consumer_running = repository.mark_dirty(
+        source_event_key="evt-customer-final-attempt-3",
+        source_event_type="payment.succeeded",
+    )
+    assert while_consumer_running["signal_created"] is False
+    assert while_consumer_running["missing_owner_recovered"] is False
+    with _connect() as connection:
+        signal_count = connection.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM internal_event_outbox
+            WHERE event_type = %s
+            """,
+            (CUSTOMER_REFRESH_REQUESTED_EVENT,),
+        ).fetchone()["count"]
+    assert signal_count == 1
+
+
 def test_customer_refresh_request_is_intent_only_until_internal_consumer() -> None:
     refresh_calls: list[bool] = []
     service = CustomerReadModelRefreshIntentService(

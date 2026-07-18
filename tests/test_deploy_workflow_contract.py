@@ -1059,20 +1059,23 @@ def test_production_deploy_installs_managed_web_and_checks_runtime_secret_readin
     assert "tee /tmp/aicrm-runtime-secret-readiness.json" in workflow[readiness_index:worker_install_index]
 
 
-def test_deploy_repairs_customer_projection_through_durable_runtime_before_guarding_workers() -> None:
+def test_deploy_repairs_customer_projection_through_candidate_durable_runtime() -> None:
     workflow = _deploy_contract_source()
 
     identity_preflight_index = workflow.index("python3 scripts/ops/check_unionid_identity_cutover.py")
-    refresh_intent_index = workflow.index("python3 scripts/run_customer_read_model_refresh.py", identity_preflight_index)
-    mutation_index = workflow.index("runtime_mutation_started=1", refresh_intent_index)
+    mutation_index = workflow.index("runtime_mutation_started=1", identity_preflight_index)
     begin_index = workflow.index("--phase begin-transaction --execute", mutation_index)
-    refresh_block = workflow[refresh_intent_index:mutation_index]
+    install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"), begin_index)
+    refresh_intent_index = workflow.index("python3 scripts/run_customer_read_model_refresh.py", install_index)
+    strict_smoke_index = workflow.index("python scripts/ops/check_admin_read_pages_smoke.py", refresh_intent_index)
+    refresh_block = workflow[refresh_intent_index:strict_smoke_index]
 
-    assert identity_preflight_index < refresh_intent_index < mutation_index < begin_index
-    assert '--source-key "deploy_preflight:${release_run_id}:${release_run_attempt}"' in refresh_block
+    assert identity_preflight_index < mutation_index < begin_index < install_index
+    assert install_index < refresh_intent_index < strict_smoke_index
+    assert '--source-key "deploy_runtime:${release_run_id}:${release_run_attempt}"' in refresh_block
     assert "--wait-seconds 180" in refresh_block
-    assert "run_customer_read_model_refresh.py --execute" not in workflow[mutation_index:]
     assert "CustomerReadModelRefreshService().run" not in refresh_block
+    assert "--require-all-data-health-green" in workflow[strict_smoke_index:]
 
 
 def test_id_validation_deploy_keeps_public_route_read_only_and_requires_public_exact_sha():
@@ -1126,16 +1129,28 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
 
     issue_index = workflow.index("python3 scripts/ops/create_deploy_smoke_session.py issue")
     smoke_index = workflow.index("python scripts/ops/check_admin_read_pages_smoke.py", issue_index)
-    revoke_index = workflow.index('revoke_deploy_smoke_session "$deploy_smoke_session_file"', smoke_index)
+    first_revoke_index = workflow.index('revoke_deploy_smoke_session "$deploy_smoke_session_file"', smoke_index)
+    system_health_index = workflow.index("verify_system_health_for_runtime_release", first_revoke_index)
+    authorize_index = workflow.index("--phase authorize-runtime-start --execute", system_health_index)
     install_index = workflow.index(_runtime_units_phase("install-enable-after-web-health"))
-    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"))
+    refresh_index = workflow.index("python3 scripts/run_customer_read_model_refresh.py", install_index)
+    strict_issue_index = workflow.index("python3 scripts/ops/create_deploy_smoke_session.py issue", refresh_index)
+    strict_smoke_index = workflow.index("python scripts/ops/check_admin_read_pages_smoke.py", strict_issue_index)
+    verified_smoke_index = workflow.index("verified_release_web_smoke_passed=1", strict_smoke_index)
+    revoke_index = workflow.index('revoke_deploy_smoke_session "$deploy_smoke_session_file"', strict_smoke_index)
+    verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"), revoke_index)
 
-    assert issue_index < smoke_index < revoke_index < install_index < verify_index
+    assert issue_index < smoke_index < first_revoke_index < system_health_index
+    assert system_health_index < authorize_index < install_index < refresh_index
+    assert refresh_index < strict_issue_index < strict_smoke_index < verified_smoke_index < revoke_index < verify_index
     assert 'deploy_smoke_session_file="$(mktemp /tmp/aicrm-deploy-smoke-session.XXXXXX)"' in workflow
     assert '--output-file "$deploy_smoke_session_file"' in workflow
     assert "--ttl-seconds 300" in workflow
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in workflow
-    assert 'admin_smoke_sidebar_args=(--include-all-sidebar --require-all-data-health-green)' in workflow
+    assert 'admin_smoke_sidebar_args=(--include-all-sidebar)' in workflow
+    assert "verified_release_web_smoke_passed=1" not in workflow[smoke_index:first_revoke_index]
+    assert "--require-all-data-health-green" in workflow[strict_smoke_index:revoke_index]
+    assert 'aicrm-deploy-strict-smoke-session.XXXXXX' in workflow[refresh_index:strict_smoke_index]
     assert 'if [ "$deploy_target" = "production" ]; then' not in workflow[:smoke_index]
     assert '--cookie-file "$cookie_file"' in workflow
     assert "aicrm_next_admin_session=" not in workflow
@@ -1144,9 +1159,6 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
     assert '| tee /tmp/aicrm-deploy-smoke-session-revoke.json' not in workflow
     assert 'report_file="$(mktemp /tmp/aicrm-deploy-smoke-session-revoke.XXXXXX)"' in workflow
     assert 'revoke_deploy_smoke_session "$deploy_smoke_session_file"' in workflow
-    system_health_index = workflow.index("verify_system_health_for_runtime_release", revoke_index)
-    authorize_index = workflow.index("--phase authorize-runtime-start --execute", system_health_index)
-    assert revoke_index < system_health_index < authorize_index < install_index
     assert "aicrm-pre-runtime-release-system-health.json" in workflow[system_health_index:authorize_index]
     assert "print_runtime_release_diagnostics" in workflow[system_health_index:install_index]
 

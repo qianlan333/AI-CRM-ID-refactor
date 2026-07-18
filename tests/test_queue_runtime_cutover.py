@@ -18,6 +18,7 @@ from aicrm_next.platform_foundation.execution_runtime.cutover import (
 from scripts.ci.check_queue_runtime_cutover_kernel import (
     collect_canary_scope_producer_errors,
     collect_errors,
+    collect_queue_policy_assignment_errors,
 )
 from scripts.ops import cutover_queue_runtime_generation
 from scripts.ops import transition_queue_runtime_scope
@@ -465,6 +466,23 @@ def test_queue_cutover_checker_rejects_canary_scope_in_ordinary_producer(tmp_pat
     assert collect_canary_scope_producer_errors(tmp_path) == [
         "aicrm_next/cloud_orchestrator/producer.py: ordinary producers must use the CAS canary authorization service"
     ]
+
+
+def test_queue_cutover_checker_rejects_default_policy_queue_insert(tmp_path) -> None:
+    relative = "aicrm_next/platform_foundation/external_effects/repo.py"
+    producer = tmp_path / relative
+    producer.parent.mkdir(parents=True)
+    producer.write_text(
+        "INSERT INTO external_effect_job (status) VALUES ('queued') RETURNING *\n",
+        encoding="utf-8",
+    )
+
+    errors = collect_queue_policy_assignment_errors(tmp_path)
+
+    assert (
+        f"{relative}: external_effect_job insert must bind queue_runtime_control.policy_version"
+        in errors
+    )
 
 
 def test_ai_audience_legacy_owner_guard_allows_only_closed_generation_zero(monkeypatch) -> None:

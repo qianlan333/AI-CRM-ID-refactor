@@ -746,6 +746,34 @@ def test_invariant_checker_rejects_scope_change_without_matching_policy_snapshot
     assert any(item.code == "runtime_control_invalid" for item in report.violations)
 
 
+def test_invariant_checker_reports_unheld_open_policy_mismatch() -> None:
+    job = ExternalEffectService().plan_effect(
+        effect_type="test.queue.policy-invariant",
+        adapter_name="test_provider",
+        operation="send",
+        target_type="test_target",
+        target_id=f"target-{uuid4().hex}",
+        payload={"execution_scope": "test_loopback"},
+        idempotency_key=f"queue-policy-invariant-{uuid4().hex}",
+        lane="wecom_interactive",
+    )
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE external_effect_job SET policy_version = 'stale-policy' WHERE id = %s",
+            (int(job["id"]),),
+        )
+
+    report = QueueRuntimeInvariantChecker(_database_url()).check()
+
+    mismatch = [item for item in report.violations if item.code == "open_item_policy_mismatch"]
+    assert len(mismatch) == 1
+    assert mismatch[0].count == 1
+    assert mismatch[0].dimensions == {
+        "queue_kind": "external_effect",
+        "policy_version": "stale-policy",
+    }
+
+
 def test_scope_transition_requires_closed_drained_gate_and_audits_snapshot_cas() -> None:
     repository = RuntimeGenerationRepository(_database_url())
     target_policy_version = f"queue-v2-allowlisted-{uuid4().hex[:10]}"

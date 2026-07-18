@@ -664,6 +664,7 @@ repositories:
       - external_effect_attempt
       - external_effect_job
       - external_effect_test_receipt
+      - queue_runtime_control
     table_writes:
       - external_effect_attempt
       - external_effect_job
@@ -675,6 +676,7 @@ repositories:
       - internal_event_consumer_attempt
       - internal_event_consumer_run
       - internal_event_outbox
+      - queue_runtime_control
       - wechat_pay_orders
     table_writes:
       - internal_event
@@ -707,6 +709,7 @@ repositories:
   aicrm_next/platform_foundation/webhook_inbox/repository.py:
     capability_owner: aicrm_next.platform_foundation.webhook_inbox
     table_reads:
+      - queue_runtime_control
       - webhook_inbox
     table_writes:
       - webhook_inbox

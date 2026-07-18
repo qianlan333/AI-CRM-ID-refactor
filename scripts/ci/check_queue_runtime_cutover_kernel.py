@@ -41,6 +41,16 @@ CANARY_SCOPE_LITERAL_ALLOWLIST = frozenset(
         "aicrm_next/platform_foundation/external_effects/wecom_canary_policy.py",
     }
 )
+QUEUE_POLICY_PRODUCER_CONTRACTS = {
+    "aicrm_next/platform_foundation/internal_events/outbox.py": ("internal_event_outbox",),
+    "aicrm_next/platform_foundation/internal_events/repository.py": (
+        "internal_event_consumer_run",
+        "internal_event_outbox",
+    ),
+    "aicrm_next/platform_foundation/external_effects/repo.py": ("external_effect_job",),
+    "aicrm_next/platform_foundation/external_effects/transactional.py": ("external_effect_job",),
+    "aicrm_next/platform_foundation/webhook_inbox/repository.py": ("webhook_inbox",),
+}
 
 
 def collect_canary_scope_producer_errors(root: Path = ROOT) -> list[str]:
@@ -62,8 +72,43 @@ def collect_canary_scope_producer_errors(root: Path = ROOT) -> list[str]:
     return errors
 
 
+def collect_queue_policy_assignment_errors(root: Path = ROOT) -> list[str]:
+    """Require every durable enqueue path to bind the active policy snapshot."""
+
+    errors: list[str] = []
+    required_source = "SELECT policy_version FROM queue_runtime_control"
+    for relative, table_names in QUEUE_POLICY_PRODUCER_CONTRACTS.items():
+        path = root / relative
+        if not path.exists():
+            errors.append(f"{relative}: canonical queue policy producer is missing")
+            continue
+        body = path.read_text(encoding="utf-8")
+        for table_name in table_names:
+            marker = f"INSERT INTO {table_name}"
+            starts: list[int] = []
+            cursor = 0
+            while True:
+                start = body.find(marker, cursor)
+                if start < 0:
+                    break
+                starts.append(start)
+                cursor = start + len(marker)
+            if not starts:
+                errors.append(f"{relative}: missing canonical insert for {table_name}")
+                continue
+            for start in starts:
+                end = body.find("RETURNING", start)
+                segment = body[start : end if end >= 0 else start + 5000]
+                if "policy_version" not in segment or required_source not in segment or "FOR SHARE" not in segment:
+                    errors.append(
+                        f"{relative}: {table_name} insert must bind queue_runtime_control.policy_version"
+                    )
+    return errors
+
+
 def collect_errors(root: Path = ROOT) -> list[str]:
     errors: list[str] = collect_canary_scope_producer_errors(root)
+    errors.extend(collect_queue_policy_assignment_errors(root))
     expected = set(CANONICAL_RUNTIME_SERVICES)
     discovered = {
         path.name

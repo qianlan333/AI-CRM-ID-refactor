@@ -73,6 +73,10 @@ class QueueRuntimeInvariantChecker:
                 )
                 self._append_rows(
                     violations,
+                    connection.execute(self._policy_alignment_sql()).fetchall(),
+                )
+                self._append_rows(
+                    violations,
                     connection.execute(self._ordering_sql()).fetchall(),
                 )
                 self._append_rows(
@@ -257,6 +261,44 @@ class QueueRuntimeInvariantChecker:
             WHERE control.claim_enabled
               AND fresh.service_name IS NULL
             GROUP BY expected.service_name
+        """
+
+    @staticmethod
+    def _policy_alignment_sql() -> str:
+        return """
+            WITH control AS (
+                SELECT policy_version
+                FROM queue_runtime_control
+                WHERE singleton = TRUE
+            ), mismatched AS (
+                SELECT 'external_effect'::TEXT AS queue_kind, job.policy_version
+                FROM external_effect_job job CROSS JOIN control
+                WHERE job.status IN ('queued', 'failed_retryable')
+                  AND job.hold_reason = ''
+                  AND job.policy_version <> control.policy_version
+                UNION ALL
+                SELECT 'internal_event', run.policy_version
+                FROM internal_event_consumer_run run CROSS JOIN control
+                WHERE run.status IN ('pending', 'failed_retryable')
+                  AND run.hold_reason = ''
+                  AND run.policy_version <> control.policy_version
+                UNION ALL
+                SELECT 'internal_outbox', outbox.policy_version
+                FROM internal_event_outbox outbox CROSS JOIN control
+                WHERE outbox.status IN ('pending', 'failed_retryable')
+                  AND outbox.hold_reason = ''
+                  AND outbox.policy_version <> control.policy_version
+                UNION ALL
+                SELECT 'webhook_inbox', inbox.policy_version
+                FROM webhook_inbox inbox CROSS JOIN control
+                WHERE inbox.status IN ('received', 'failed_retryable')
+                  AND inbox.hold_reason = ''
+                  AND inbox.policy_version <> control.policy_version
+            )
+            SELECT 'open_item_policy_mismatch' AS code, queue_kind, policy_version,
+                   COUNT(*)::BIGINT AS violation_count
+            FROM mismatched
+            GROUP BY queue_kind, policy_version
         """
 
     @classmethod

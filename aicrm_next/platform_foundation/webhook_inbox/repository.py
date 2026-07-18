@@ -221,7 +221,7 @@ class PostgresWebhookInboxRepository:
                     provider, event_family, route, method, tenant_id, corp_id,
                     event_type, change_type, external_event_id, idempotency_key,
                     execution_id, parent_execution_id, lane, available_at,
-                    ordering_key, fairness_key,
+                    ordering_key, fairness_key, policy_version,
                     raw_query_json, raw_headers_json, raw_body, payload_xml,
                     payload_json, payload_summary_json, processing_summary_json, status, max_attempts,
                     received_at, last_seen_at, created_at, updated_at
@@ -230,6 +230,7 @@ class PostgresWebhookInboxRepository:
                     %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, '', 'webhook_inbox', CURRENT_TIMESTAMP, %s, %s,
+                    (SELECT policy_version FROM queue_runtime_control WHERE singleton = TRUE FOR SHARE),
                     %s, %s, %s, %s,
                     %s, %s, '{}'::jsonb, 'received', %s,
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
