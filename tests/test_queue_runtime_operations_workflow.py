@@ -49,6 +49,7 @@ def test_queue_operations_workflow_uses_pinned_ssh_and_private_canary_spec() -> 
     assert "Execute guarded canary-spec queue operation on 49" in source
     assert "Import guarded production canary channel asset on 49" in source
     assert "Ingest guarded production canary callback transcript on 49" in source
+    assert "Arm guarded real-time callback canary on 49" in source
     assert "Execute guarded non-spec queue operation on 49" in source
     assert "cancel-in-progress: false" in source
 
@@ -69,6 +70,7 @@ def test_remote_queue_operation_has_server_lock_release_attestation_and_no_direc
         "configure_wecom_canary.py",
         "import_wecom_canary_channel_asset.py",
         "ingest_wecom_canary_callback.py",
+        "arm_wecom_callback_canary.py",
         "transition_queue_runtime_scope.py",
         "plan_wecom_canary.py",
         "authorize_wecom_canary_execution.py",
@@ -85,6 +87,21 @@ def test_remote_queue_operation_has_server_lock_release_attestation_and_no_direc
         "150.158.82.186",
     ):
         assert forbidden not in source
+
+
+def test_real_time_callback_arm_is_private_asset_bound_and_never_receives_transcript_secret() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    arm_step = source[
+        source.index("Arm guarded real-time callback canary on 49") :
+        source.index("Record operation provenance")
+    ]
+
+    assert "ID_VALIDATION_WECOM_CANARY_SPEC_B64" in arm_step
+    assert "ID_VALIDATION_WECOM_CHANNEL_ASSET_B64" in arm_step
+    assert "WECOM_CANARY_SPEC_B64" in arm_step
+    assert "WECOM_CHANNEL_ASSET_B64" in arm_step
+    assert "WECOM_CALLBACK_EVENT_B64" not in arm_step
+    assert "command_timeout: 25m" in arm_step
 
 
 def test_remote_rollback_blocks_wecom_before_returning_to_test_loopback() -> None:
