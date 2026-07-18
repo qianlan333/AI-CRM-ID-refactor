@@ -273,7 +273,7 @@ def _scenario_requests(
                 **common,
                 "scenario": "profile",
                 "effect_type": WECOM_PROFILE_UPDATE,
-                "adapter_name": "wecom_profile_update",
+                "adapter_name": "wecom_profile",
                 "operation": "update_external_contact_remark",
                 "target_type": "external_user",
                 "target_id": external_userid,
