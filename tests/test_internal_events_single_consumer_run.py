@@ -24,6 +24,7 @@ PAYMENT_CONSUMERS = frozenset({
     "service_period_entitlement_consumer",
     "webhook_order_paid_consumer",
     "ai_audience_source_poke_consumer",
+    "customer_read_model_dirty_consumer",
     "customer_timeline_projection_consumer",
     "customer_business_summary_consumer",
     "dnd_policy_consumer",
