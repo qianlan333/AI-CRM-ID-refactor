@@ -285,9 +285,11 @@ class CustomerReadModelRefreshIntentRepository:
                           AND outbox.policy_version = control.policy_version
                           AND outbox.worker_generation IN (0, control.active_generation)
                           AND outbox.hold_reason = ''
-                          AND outbox.attempt_count < outbox.max_attempts
                           AND (
-                              outbox.status IN ('pending', 'failed_retryable')
+                              (
+                                  outbox.status IN ('pending', 'failed_retryable')
+                                  AND outbox.attempt_count < outbox.max_attempts
+                              )
                               OR (
                                   outbox.status = 'running'
                                   AND outbox.lease_token <> ''
@@ -305,9 +307,11 @@ class CustomerReadModelRefreshIntentRepository:
                           AND run.policy_version = control.policy_version
                           AND run.worker_generation IN (0, control.active_generation)
                           AND run.hold_reason = ''
-                          AND run.attempt_count < run.max_attempts
                           AND (
-                              run.status IN ('pending', 'failed_retryable')
+                              (
+                                  run.status IN ('pending', 'failed_retryable')
+                                  AND run.attempt_count < run.max_attempts
+                              )
                               OR (
                                   run.status = 'running'
                                   AND run.lease_token <> ''

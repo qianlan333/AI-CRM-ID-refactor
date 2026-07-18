@@ -766,7 +766,6 @@ if ! python scripts/ops/check_admin_read_pages_smoke.py \
   sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
   exit 1
 fi
-verified_release_web_smoke_passed=1
 revoke_deploy_smoke_session "$deploy_smoke_session_file"
 deploy_smoke_session_file=""
 if ! verify_system_health_for_runtime_release \
@@ -806,6 +805,7 @@ if ! python scripts/ops/check_admin_read_pages_smoke.py \
   sudo journalctl -u openclaw-wecom-postgres.service -n 120 --no-pager || true
   exit 1
 fi
+verified_release_web_smoke_passed=1
 revoke_deploy_smoke_session "$deploy_smoke_session_file"
 deploy_smoke_session_file=""
 python scripts/ops/check_wecom_callback_deploy_smoke.py | tee /tmp/wecom-callback-deploy-smoke.json

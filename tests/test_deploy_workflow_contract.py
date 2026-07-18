@@ -1136,17 +1136,19 @@ def test_deploy_admin_smoke_uses_short_lived_server_session_without_logging_cook
     refresh_index = workflow.index("python3 scripts/run_customer_read_model_refresh.py", install_index)
     strict_issue_index = workflow.index("python3 scripts/ops/create_deploy_smoke_session.py issue", refresh_index)
     strict_smoke_index = workflow.index("python scripts/ops/check_admin_read_pages_smoke.py", strict_issue_index)
+    verified_smoke_index = workflow.index("verified_release_web_smoke_passed=1", strict_smoke_index)
     revoke_index = workflow.index('revoke_deploy_smoke_session "$deploy_smoke_session_file"', strict_smoke_index)
     verify_index = workflow.index(_runtime_units_phase("verify-staged-runtime"), revoke_index)
 
     assert issue_index < smoke_index < first_revoke_index < system_health_index
     assert system_health_index < authorize_index < install_index < refresh_index
-    assert refresh_index < strict_issue_index < strict_smoke_index < revoke_index < verify_index
+    assert refresh_index < strict_issue_index < strict_smoke_index < verified_smoke_index < revoke_index < verify_index
     assert 'deploy_smoke_session_file="$(mktemp /tmp/aicrm-deploy-smoke-session.XXXXXX)"' in workflow
     assert '--output-file "$deploy_smoke_session_file"' in workflow
     assert "--ttl-seconds 300" in workflow
     assert '--admin-cookie-file "$deploy_smoke_session_file"' in workflow
     assert 'admin_smoke_sidebar_args=(--include-all-sidebar)' in workflow
+    assert "verified_release_web_smoke_passed=1" not in workflow[smoke_index:first_revoke_index]
     assert "--require-all-data-health-green" in workflow[strict_smoke_index:revoke_index]
     assert 'aicrm-deploy-strict-smoke-session.XXXXXX' in workflow[refresh_index:strict_smoke_index]
     assert 'if [ "$deploy_target" = "production" ]; then' not in workflow[:smoke_index]
