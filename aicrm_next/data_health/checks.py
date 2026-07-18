@@ -40,6 +40,26 @@ QUESTIONNAIRE_CONTINUATION_CUTOVER_SQL = QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_SQL
 COMMERCE_CONTINUATION_CUTOVER_SQL = "TIMESTAMPTZ '2026-07-13 09:46:09+00'"
 
 
+def _id_validation_canary_job_sql(alias: str) -> str:
+    """Return the strict provenance predicate for dedicated ID-validation effects."""
+
+    return f"""
+        COALESCE({alias}.business_type, '') = 'id_validation_canary'
+        AND COALESCE({alias}.business_id, '') <> ''
+        AND COALESCE({alias}.source_module, '') = 'scripts.ops.plan_wecom_canary'
+        AND COALESCE({alias}.source_route, '') = 'scripts/ops/plan_wecom_canary.py'
+        AND COALESCE({alias}.trace_id, '') LIKE 'id-validation-canary:%'
+        AND COALESCE({alias}.request_id, '') = COALESCE({alias}.business_id, '')
+        AND COALESCE({alias}.idempotency_key, '') LIKE 'id-validation-canary:%'
+        AND COALESCE({alias}.fairness_key, '') = 'id_validation_canary'
+        AND COALESCE({alias}.actor_id, '') LIKE 'github:%'
+        AND COALESCE({alias}.actor_type, '') = 'operator'
+        AND COALESCE({alias}.risk_level, '') = 'high'
+        AND COALESCE({alias}.execution_mode, '') = 'execute'
+        AND {alias}.max_attempts = 1
+    """
+
+
 def run_all_checks() -> list[DataHealthCheckResult]:
     return [check() for check in _CHECKS]
 
@@ -642,28 +662,51 @@ def _external_effect_failed_retryable_backlog() -> DataHealthCheckResult:
                 session.execute(
                     text(
                         f"""
+                        WITH classified_jobs AS (
+                            SELECT job.*,
+                                   ({_id_validation_canary_job_sql("job")}) AS id_validation_canary
+                            FROM external_effect_job job
+                        )
                         SELECT
-                            COUNT(*) FILTER (WHERE status = 'failed_retryable') AS failed_retryable_count,
                             COUNT(*) FILTER (
-                                WHERE status = 'failed_terminal'
+                                WHERE NOT id_validation_canary AND status = 'failed_retryable'
+                            ) AS failed_retryable_count,
+                            COUNT(*) FILTER (
+                                WHERE NOT id_validation_canary
+                                  AND status = 'failed_terminal'
                                   AND updated_at >= CURRENT_TIMESTAMP - make_interval(hours => {EXTERNAL_EFFECT_TERMINAL_LOOKBACK_HOURS})
                             ) AS recent_failed_terminal_count,
                             COUNT(*) FILTER (
-                                WHERE status = 'blocked'
+                                WHERE NOT id_validation_canary
+                                  AND status = 'blocked'
                                   AND updated_at >= CURRENT_TIMESTAMP - make_interval(hours => {EXTERNAL_EFFECT_TERMINAL_LOOKBACK_HOURS})
                             ) AS recent_blocked_count,
-                            COUNT(*) FILTER (WHERE status = 'failed_terminal') AS historical_failed_terminal_count,
-                            COUNT(*) FILTER (WHERE status = 'blocked') AS historical_blocked_count,
                             COUNT(*) FILTER (
-                                WHERE status = 'failed_retryable'
+                                WHERE NOT id_validation_canary AND status = 'failed_terminal'
+                            ) AS historical_failed_terminal_count,
+                            COUNT(*) FILTER (
+                                WHERE NOT id_validation_canary AND status = 'blocked'
+                            ) AS historical_blocked_count,
+                            COUNT(*) FILTER (
+                                WHERE NOT id_validation_canary
+                                  AND status = 'failed_retryable'
                                   AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
                             ) AS due_retryable_count,
                             EXTRACT(EPOCH FROM (
                                 CURRENT_TIMESTAMP - MIN(COALESCE(next_retry_at, updated_at)) FILTER (
-                                    WHERE status = 'failed_retryable'
+                                    WHERE NOT id_validation_canary AND status = 'failed_retryable'
                                 )
-                            )) AS oldest_failed_retryable_age_seconds
-                        FROM external_effect_job
+                            )) AS oldest_failed_retryable_age_seconds,
+                            COUNT(*) FILTER (
+                                WHERE id_validation_canary AND status = 'failed_retryable'
+                            ) AS canary_failed_retryable_count,
+                            COUNT(*) FILTER (
+                                WHERE id_validation_canary AND status = 'failed_terminal'
+                            ) AS canary_failed_terminal_count,
+                            COUNT(*) FILTER (
+                                WHERE id_validation_canary AND status = 'blocked'
+                            ) AS canary_blocked_count
+                        FROM classified_jobs
                         """
                     )
                 )
@@ -689,6 +732,9 @@ def _external_effect_failed_retryable_backlog() -> DataHealthCheckResult:
     historical_blocked_count = int(row.get("historical_blocked_count") or blocked_count)
     due_retryable_count = int(row.get("due_retryable_count") or 0)
     oldest_failed_retryable_age_seconds = int(float(row.get("oldest_failed_retryable_age_seconds") or 0))
+    canary_failed_retryable_count = int(row.get("canary_failed_retryable_count") or 0)
+    canary_failed_terminal_count = int(row.get("canary_failed_terminal_count") or 0)
+    canary_blocked_count = int(row.get("canary_blocked_count") or 0)
     violations = []
     if failed_terminal_count > 0:
         violations.append(f"failed_terminal_count={failed_terminal_count} exceeds 0")
@@ -706,6 +752,13 @@ def _external_effect_failed_retryable_backlog() -> DataHealthCheckResult:
         "due_retryable_count": due_retryable_count,
         "oldest_failed_retryable_age_seconds": oldest_failed_retryable_age_seconds,
         "due_retryable_threshold": EXTERNAL_EFFECT_RETRYABLE_DUE_MAX_COUNT,
+        "id_validation_canary": {
+            "failed_retryable_count": canary_failed_retryable_count,
+            "failed_terminal_count": canary_failed_terminal_count,
+            "blocked_count": canary_blocked_count,
+            "excluded_from_business_health": True,
+            "strict_provenance_required": True,
+        },
     }
     if violations:
         return DataHealthCheckResult(
@@ -1276,14 +1329,51 @@ def _wecom_media_lease_health() -> DataHealthCheckResult:
             row = (
                 session.execute(
                     text(
-                        """
+                        f"""
+                        WITH classified_leases AS (
+                            SELECT lease.*,
+                                   EXISTS (
+                                       SELECT 1
+                                       FROM external_effect_job canary_job
+                                       WHERE canary_job.target_type = 'media_library_material'
+                                         AND canary_job.target_id = CONCAT(
+                                             lease.material_kind, ':', lease.material_id, ':', lease.upload_kind
+                                         )
+                                         AND ({_id_validation_canary_job_sql('canary_job')})
+                                   ) AS id_validation_canary_referenced,
+                                   EXISTS (
+                                       SELECT 1
+                                       FROM external_effect_job ordinary_job
+                                       WHERE ordinary_job.target_type = 'media_library_material'
+                                         AND ordinary_job.target_id = CONCAT(
+                                             lease.material_kind, ':', lease.material_id, ':', lease.upload_kind
+                                         )
+                                         AND NOT ({_id_validation_canary_job_sql('ordinary_job')})
+                                   ) AS ordinary_job_referenced
+                            FROM wecom_media_leases lease
+                            WHERE lease.tenant_id = 'aicrm'
+                        )
                         SELECT
                             COUNT(*) AS total_count,
                             COUNT(*) FILTER (WHERE status = 'ready' AND provider_expires_at > CURRENT_TIMESTAMP) AS ready_count,
                             COUNT(*) FILTER (WHERE status = 'ready' AND refresh_after <= CURRENT_TIMESTAMP) AS refresh_due_count,
                             COUNT(*) FILTER (WHERE status = 'refreshing') AS refreshing_count,
-                            COUNT(*) FILTER (WHERE status = 'failed') AS failed_count,
-                            COUNT(*) FILTER (WHERE status = 'invalid_source') AS invalid_source_count,
+                            COUNT(*) FILTER (
+                                WHERE status = 'failed'
+                                  AND NOT (id_validation_canary_referenced AND NOT ordinary_job_referenced)
+                            ) AS failed_count,
+                            COUNT(*) FILTER (
+                                WHERE status = 'invalid_source'
+                                  AND NOT (id_validation_canary_referenced AND NOT ordinary_job_referenced)
+                            ) AS invalid_source_count,
+                            COUNT(*) FILTER (
+                                WHERE status = 'failed'
+                                  AND id_validation_canary_referenced AND NOT ordinary_job_referenced
+                            ) AS canary_failed_count,
+                            COUNT(*) FILTER (
+                                WHERE status = 'invalid_source'
+                                  AND id_validation_canary_referenced AND NOT ordinary_job_referenced
+                            ) AS canary_invalid_source_count,
                             COUNT(*) FILTER (WHERE status = 'ready' AND provider_expires_at <= CURRENT_TIMESTAMP) AS expired_count,
                             (
                                 SELECT COUNT(*) FROM (
@@ -1298,8 +1388,7 @@ def _wecom_media_lease_health() -> DataHealthCheckResult:
                                       AND COALESCE(thumb_image_base64, '') = ''
                                 ) source_gaps
                             ) AS source_gap_count
-                        FROM wecom_media_leases
-                        WHERE tenant_id = 'aicrm'
+                        FROM classified_leases
                         """
                     )
                 )
