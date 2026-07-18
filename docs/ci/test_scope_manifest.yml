@@ -45,6 +45,7 @@
     "scripts/run_wecom_callback_inbox_worker.py",
     "tests/conftest.py",
     "docs/ci/test_scope_policy.yml",
+    "docs/ci/test_scope_legacy_only_review.yml",
     "docs/ci/pytest_duration_baseline.json",
     "tests/test_pytest_duration_baseline_builder.py",
     "tests/test_pytest_shard_selector.py",
@@ -127,9 +128,14 @@
       "paths": [
         "docs/ci/test_scope_manifest.yml",
         "docs/ci/test_scope_policy.yml",
+        "docs/ci/test_scope_legacy_only_review.yml",
+        "scripts/ci/audit_test_inventory.py",
         "scripts/ci/select_test_scope_v2.py",
+        "scripts/ci/summarize_test_scope_shadow.py",
         "tests/test_convention_test_scope.py",
-        "tests/test_select_test_scope.py"
+        "tests/test_select_test_scope.py",
+        "tests/test_test_inventory_audit.py",
+        "tests/test_test_scope_shadow_summary.py"
       ],
       "scopes": [
         "ci_scope_selector"
@@ -1933,13 +1939,20 @@
       "paths": [
         "docs/ci/test_scope_manifest.yml",
         "docs/ci/test_scope_policy.yml",
+        "docs/ci/test_scope_legacy_only_review.yml",
+        "scripts/ci/audit_test_inventory.py",
         "scripts/ci/select_test_scope_v2.py",
+        "scripts/ci/summarize_test_scope_shadow.py",
         "tests/test_convention_test_scope.py",
-        "tests/test_select_test_scope.py"
+        "tests/test_select_test_scope.py",
+        "tests/test_test_inventory_audit.py",
+        "tests/test_test_scope_shadow_summary.py"
       ],
       "python_tests": [
         "tests/test_convention_test_scope.py",
         "tests/test_select_test_scope.py",
+        "tests/test_test_inventory_audit.py",
+        "tests/test_test_scope_shadow_summary.py",
         "tests/test_ci_workflow_contract.py"
       ],
       "needs_postgres": false,

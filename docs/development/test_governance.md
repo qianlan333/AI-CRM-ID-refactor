@@ -7,12 +7,12 @@ that must change with ordinary product code. The current
 `docs/ci/test_scope_manifest.yml` remains the only authoritative selector during
 the observation period.
 
-This first stage is intentionally additive: it does not claim an immediate CI
-time or repository-line reduction while both selectors coexist. Its immediate
-benefits are measurable routing evidence, a current duration baseline, and fewer
-route-count maintenance edits. The actual deletion of the legacy selector,
-large manifest, and their redundant contract tests belongs to the separately
-approved cutover stage.
+The migration is intentionally additive: it does not claim an immediate
+repository-line reduction while both selectors coexist. Stage 2 adds a weekly,
+read-only observation workflow that aggregates unique pull-request evidence and
+builds a duplicate/slow-test review queue. The actual deletion of the legacy
+selector, large manifest, and redundant tests belongs to the separately approved
+cutover stage.
 
 ## Architecture boundary
 
@@ -69,30 +69,49 @@ updates.
 
 Every CI Fast run writes a v2 comparison to the job summary and uploads the JSON
 report. The report records the legacy and candidate test sets, high-risk reasons,
-safety fallbacks, and whether the candidate would avoid a full regression.
+safety fallbacks, and whether the candidate would avoid a full regression. The
+weekly `Test Governance Observability` workflow downloads retained reports,
+de-duplicates repeated commits by pull-request number, and evaluates the
+repository-owned thresholds in `docs/ci/test_scope_policy.yml`.
 
 Cutover requires a separate, explicitly approved change after all of these are
 true in `AI-CRM-ID-refactor`:
 
-1. At least 20 representative pull-request runs have shadow evidence.
-2. No high-risk change is classified below full regression.
-3. No unclassified or no-test-match fallback remains for normal development
-   paths.
-4. Every removed legacy-only test is reviewed as intentional rather than missed
-   coverage.
-5. The old selector remains available for a one-commit rollback.
+1. At least 20 unique pull requests and 14 days of shadow evidence exist.
+2. The evidence contains at least eight scoped and five high-risk pull requests,
+   so a high-risk-only burst cannot qualify the selector.
+3. No high-risk change is classified below full regression, and no normal-path
+   sample relies on an unclassified or no-test-match safety fallback. A fallback
+   on an already high-risk sample is reported but does not weaken its full gate.
+4. Every legacy-only test is explicitly recorded in
+   `docs/ci/test_scope_legacy_only_review.yml` as either included by the
+   candidate or intentional legacy overcoverage.
+5. The generated report says `automated_ready_for_explicit_cutover_review=true`,
+   an explicit human approval is given, and the old selector remains available
+   for a one-commit rollback.
 
-Nothing in this change ports the policy to `qianlan333/AI-CRM`, merges it into
-`main`, or deploys it. Those are separate confirmation points.
+Nothing in this stage ports the policy to `qianlan333/AI-CRM` or deploys it to
+production. Those remain separate confirmation points.
+
+## Duplicate and slow-test audit
+
+`scripts/ci/audit_test_inventory.py` parses pytest source without importing the
+application. It reports overwritten duplicate definitions, exact duplicate-body
+candidates above a minimum AST size, slow files from the duration baseline,
+oversized files, and baseline paths that are missing or retired. The report is a
+review queue only: it never deletes a test or changes CI routing. Similar-looking
+tests are kept until their fixtures, assertions, and protected risk are reviewed.
 
 ## Duration baseline
 
-The previous baseline covered 481 files and 2,843 items. This migration refreshes
-it from successful main run `29566083427`, covering 613 files and 3,906 items, so
-new shards no longer fall back to an outdated per-item estimate for 132 files.
+The checked-in baseline was refreshed from successful main run `29566083427`,
+covering 613 files and 3,906 items. The inventory report exposes newly added or
+retired files until the next successful baseline refresh lands.
 
 The scheduled full regression aggregates all eight JUnit artifacts and rebuilds
-`docs/ci/pytest_duration_baseline.json`. If the baseline changes, automation opens
-or updates a draft pull request; it never writes directly to `main`. Baseline
-publication is best-effort and cannot turn an otherwise successful regression
-red.
+`docs/ci/pytest_duration_baseline.json`. If the baseline changes, automation first
+pushes a dedicated branch and then opens or updates a draft pull request; it never
+writes directly to `main`. If repository token policy blocks pull-request
+creation, the workflow remains green and publishes a manual compare link in its
+summary. Baseline publication is best-effort and cannot turn an otherwise
+successful regression red.

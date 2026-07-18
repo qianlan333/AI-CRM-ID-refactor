@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "description": "Explicit reviews for tests selected only by the legacy CI selector. Empty until a reviewer classifies a candidate difference as intentional overcoverage or adds the test to the convention selector.",
+  "reviews": []
+}

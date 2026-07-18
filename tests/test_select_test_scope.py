@@ -1134,15 +1134,22 @@ def test_ci_selector_governance_change_selects_both_selector_contracts() -> None
     result = _select(
         "docs/ci/test_scope_manifest.yml",
         "docs/ci/test_scope_policy.yml",
+        "docs/ci/test_scope_legacy_only_review.yml",
+        "scripts/ci/audit_test_inventory.py",
         "scripts/ci/select_test_scope_v2.py",
+        "scripts/ci/summarize_test_scope_shadow.py",
         "tests/test_convention_test_scope.py",
         "tests/test_select_test_scope.py",
+        "tests/test_test_inventory_audit.py",
+        "tests/test_test_scope_shadow_summary.py",
     )
 
     assert result["matched_scopes"] == ["ci_scope_selector"]
     assert result["python_tests"] == [
         "tests/test_convention_test_scope.py",
         "tests/test_select_test_scope.py",
+        "tests/test_test_inventory_audit.py",
+        "tests/test_test_scope_shadow_summary.py",
         "tests/test_ci_workflow_contract.py",
     ]
     assert result["unmatched_files"] == []
