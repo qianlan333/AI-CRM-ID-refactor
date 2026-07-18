@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import re
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
@@ -27,7 +28,10 @@ CLASS_NOT_APPLICATION = "not_application"
 
 _EXPECTED_SOURCE = "qianlan333/AI-CRM-ID-refactor"
 _EXPECTED_TARGET = "qianlan333/AI-CRM"
+_EXPECTED_UPSTREAM = "qianlan333/AI-CRM"
+_EXPECTED_UPSTREAM_STRATEGY = "ancestry_merge_preserving_id_only_overlay"
 _EXPECTED_COMMAND = "PROMOTE <validated_ID_SHA> TO AI-CRM"
+_FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 _REQUIRED_ID_ONLY = frozenset(
     {
@@ -149,6 +153,16 @@ def _validate_patterns(manifest: dict[str, Any], section: str) -> list[str]:
     return errors
 
 
+def _is_ancestor(*, root: Path, ancestor_sha: str) -> bool:
+    completed = subprocess.run(
+        ["git", "-C", str(root), "merge-base", "--is-ancestor", ancestor_sha, "HEAD"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed.returncode == 0
+
+
 def validate_manifest(*, root: Path, manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     if manifest.get("version") != 1:
@@ -157,6 +171,21 @@ def validate_manifest(*, root: Path, manifest: dict[str, Any]) -> list[str]:
         errors.append(f"source_repository must be {_EXPECTED_SOURCE}")
     if manifest.get("target_repository") != _EXPECTED_TARGET:
         errors.append(f"target_repository must be {_EXPECTED_TARGET}")
+    upstream_sync = manifest.get("upstream_sync")
+    if not isinstance(upstream_sync, dict):
+        errors.append("upstream_sync must be a mapping")
+    else:
+        if upstream_sync.get("repository") != _EXPECTED_UPSTREAM:
+            errors.append(f"upstream_sync.repository must be {_EXPECTED_UPSTREAM}")
+        validated_sha = str(upstream_sync.get("validated_sha") or "").strip()
+        if _FULL_SHA.fullmatch(validated_sha) is None:
+            errors.append("upstream_sync.validated_sha must be one lowercase full Git SHA")
+        elif not _is_ancestor(root=root, ancestor_sha=validated_sha):
+            errors.append("upstream_sync.validated_sha must be an ancestor of HEAD")
+        if upstream_sync.get("strategy") != _EXPECTED_UPSTREAM_STRATEGY:
+            errors.append(
+                f"upstream_sync.strategy must be {_EXPECTED_UPSTREAM_STRATEGY}"
+            )
     authorization = manifest.get("authorization")
     if not isinstance(authorization, dict):
         errors.append("authorization must be a mapping")
