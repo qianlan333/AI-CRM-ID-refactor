@@ -303,12 +303,27 @@ def main(argv: list[str] | None = None) -> int:
                     str(args.reason).strip(),
                 ),
             )
+    resumed = None
+    if args.mode == "enable":
+        resumed = runtime.resume_claims(
+            expected_generation=int(args.generation),
+            expected_policy_version=str(args.expected_policy_version),
+            expected_scope="test_loopback",
+            actor=str(args.actor),
+            reason=f"canary configuration committed: {str(args.reason)}",
+        )
     print(
         json.dumps(
             {
                 **plan,
                 "applied": True,
                 "configuration_hash": configuration_hash(after),
+                "claim_enabled": bool(resumed.claim_enabled) if resumed is not None else False,
+                "external_claim_scope": (
+                    str(resumed.external_claim_scope)
+                    if resumed is not None
+                    else state.external_claim_scope
+                ),
             },
             ensure_ascii=False,
             sort_keys=True,

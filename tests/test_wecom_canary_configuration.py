@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -125,3 +126,177 @@ def test_disable_configuration_clears_every_real_target_and_provider_gate() -> N
         assert disabled[key] == ""
     assert disabled["AICRM_WECOM_EXECUTION_MODE"] == "disabled"
     assert disabled["AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE"] == "false"
+
+
+class _Rows:
+    def __init__(self, *, one=None, many=None) -> None:
+        self._one = one
+        self._many = list(many or [])
+
+    def fetchone(self):
+        return self._one
+
+    def fetchall(self):
+        return list(self._many)
+
+
+class _Transaction:
+    def __init__(self, events: list[str]) -> None:
+        self._events = events
+
+    def __enter__(self):
+        self._events.append("transaction_enter")
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._events.append("transaction_exit")
+
+
+class _Connection:
+    def __init__(self, events: list[str], control: dict) -> None:
+        self._events = events
+        self._control = control
+
+    def __enter__(self):
+        self._events.append("connection_enter")
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self._events.append("connection_exit")
+
+    def transaction(self) -> _Transaction:
+        return _Transaction(self._events)
+
+    def execute(self, statement, parameters=None) -> _Rows:
+        sql = " ".join(str(statement).split())
+        if "FROM queue_runtime_control" in sql and "FOR UPDATE" in sql:
+            return _Rows(one=dict(self._control))
+        if "SELECT key, value FROM app_settings" in sql:
+            return _Rows(many=[])
+        self._events.append("configuration_write")
+        return _Rows()
+
+
+class _Runtime:
+    def __init__(self, events: list[str], *, scope: str) -> None:
+        self._events = events
+        self._scope = scope
+        self.resume_arguments = None
+
+    def read_state(self):
+        return SimpleNamespace(
+            active_generation=17,
+            claim_enabled=True,
+            policy_version="queue-v2-test-loopback",
+            external_claim_scope=self._scope,
+        )
+
+    def disable_claims(self, **_kwargs):
+        self._events.append("disable_claims")
+
+    def wait_claims_drained(self, **_kwargs):
+        self._events.append("wait_claims_drained")
+
+    def resume_claims(self, **kwargs):
+        self._events.append("resume_claims")
+        self.resume_arguments = dict(kwargs)
+        return SimpleNamespace(claim_enabled=True, external_claim_scope=self._scope)
+
+
+def _patch_apply_runtime(monkeypatch, *, scope: str):
+    events: list[str] = []
+    runtime = _Runtime(events, scope=scope)
+    control = {
+        "active_generation": 17,
+        "claim_enabled": False,
+        "policy_version": "queue-v2-test-loopback",
+        "external_claim_scope": scope,
+    }
+    monkeypatch.setenv(configure_wecom_canary.AUTHORIZATION_ENV, "1")
+    monkeypatch.setattr(configure_wecom_canary, "raw_database_url", lambda: "postgresql://canary")
+    monkeypatch.setattr(configure_wecom_canary, "normalize_runtime_database_url", lambda value: value)
+    monkeypatch.setattr(configure_wecom_canary, "RuntimeGenerationRepository", lambda _url: runtime)
+    monkeypatch.setattr(
+        configure_wecom_canary,
+        "open_runtime_connection",
+        lambda _url: _Connection(events, control),
+    )
+    return events, runtime
+
+
+def test_enable_configuration_resumes_exact_test_loopback_claim_gate_after_commit(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    events, runtime = _patch_apply_runtime(monkeypatch, scope="test_loopback")
+    path = _write_spec(tmp_path, _valid_spec())
+
+    assert (
+        configure_wecom_canary.main(
+            [
+                "--mode",
+                "enable",
+                "--spec-file",
+                path,
+                "--generation",
+                "17",
+                "--expected-policy-version",
+                "queue-v2-test-loopback",
+                "--actor",
+                "pytest",
+                "--reason",
+                "enable guarded canary",
+                "--apply",
+                "--confirmation",
+                "CONFIGURE_WECOM_CANARY_17_ENABLE",
+            ]
+        )
+        == 0
+    )
+
+    assert events.index("resume_claims") > events.index("connection_exit")
+    assert runtime.resume_arguments == {
+        "expected_generation": 17,
+        "expected_policy_version": "queue-v2-test-loopback",
+        "expected_scope": "test_loopback",
+        "actor": "pytest",
+        "reason": "canary configuration committed: enable guarded canary",
+    }
+    output = json.loads(capsys.readouterr().out)
+    assert output["claim_enabled"] is True
+    assert output["external_claim_scope"] == "test_loopback"
+
+
+def test_disable_configuration_keeps_claim_gate_closed_for_scope_rollback(
+    monkeypatch,
+    capsys,
+) -> None:
+    events, runtime = _patch_apply_runtime(monkeypatch, scope="allowlisted")
+
+    assert (
+        configure_wecom_canary.main(
+            [
+                "--mode",
+                "disable",
+                "--generation",
+                "17",
+                "--expected-policy-version",
+                "queue-v2-test-loopback",
+                "--actor",
+                "pytest",
+                "--reason",
+                "disable guarded canary",
+                "--apply",
+                "--confirmation",
+                "CONFIGURE_WECOM_CANARY_17_DISABLE",
+            ]
+        )
+        == 0
+    )
+
+    assert "resume_claims" not in events
+    assert runtime.resume_arguments is None
+    output = json.loads(capsys.readouterr().out)
+    assert output["claim_enabled"] is False
+    assert output["external_claim_scope"] == "allowlisted"
