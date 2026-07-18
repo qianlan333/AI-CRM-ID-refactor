@@ -62,6 +62,8 @@ def test_configuration_hash_is_stable_and_sensitive_to_every_tracked_value() -> 
     assert len(configuration_hash(first)) == 64
     assert configuration_hash(first) == configuration_hash(dict(reversed(list(first.items()))))
     assert configuration_hash(first) != configuration_hash(second)
+    assert "AICRM_WECOM_PRIVATE_ADAPTER_MODE" in CANARY_CONFIG_KEYS
+    assert "AICRM_WECOM_GROUP_ADAPTER_MODE" in CANARY_CONFIG_KEYS
 
 
 def test_soak_snapshot_requires_exact_context_and_zero_correctness_regressions() -> None:
@@ -194,6 +196,90 @@ def test_external_effect_evidence_requires_exact_policy_generation_and_provider_
     assert passed["provider_policy_gate_passed"] is True
     assert wrong_policy["status"] == "failed"
     assert wrong_policy["policy_proof_valid"] is False
+
+
+def test_external_effect_evidence_exposes_only_stable_redacted_failure_diagnostics(
+    monkeypatch,
+) -> None:
+    connection = _EvidenceConnection()
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.normalize_runtime_database_url",
+        lambda value: value,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.open_runtime_connection",
+        lambda _value: connection,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.wecom_canary_job_gate_error",
+        lambda _job: "",
+    )
+    job = ExternalEffectJob(
+        id=93,
+        effect_type="wecom.media.upload",
+        execution_id="exe_failed_canary",
+        payload_json={"execution_scope": "allowlisted_canary"},
+        status="failed_terminal",
+        policy_version="queue-v2-allowlisted",
+        worker_generation=17,
+        provider_call_started_at="2026-07-17T00:00:00Z",
+        side_effect_executed=False,
+        provider_result_received=False,
+        attempt_count=1,
+        last_error_code="material_not_found",
+        last_error_message="secret-bearing provider text must never be exposed",
+    )
+    attempts = [
+        ExternalEffectAttempt(
+            job_id=93,
+            adapter_mode="execute",
+            provider_call_started_at="2026-07-17T00:00:00Z",
+            worker_generation=17,
+            status="failed_terminal",
+            error_code="material_not_found",
+            error_message="secret-bearing attempt text must never be exposed",
+            response_summary_json={
+                "adapter_mode": "production",
+                "provider_error_classification": "blocked",
+                "errcode": 40096,
+                "http_status": 400,
+                "execution_gate": "",
+                "blocked": True,
+                "provider_payload": "must-not-appear",
+            },
+        )
+    ]
+
+    result = record_external_effect_evidence(
+        "postgresql://runtime",
+        job=job,
+        attempts=attempts,
+        release_sha="a" * 40,
+        generation=17,
+        policy_version="queue-v2-allowlisted",
+        actor="pytest",
+        reason="safe failure diagnostics",
+        extra_evidence={
+            "target_values_redacted": False,
+            "error_messages_redacted": False,
+            "provider_adapter_mode": "fake",
+        },
+    )
+
+    assert result["status"] == "failed"
+    assert result["job_error_code"] == "material_not_found"
+    assert result["provider_adapter_mode"] == "production"
+    assert result["provider_attempt_status"] == "failed_terminal"
+    assert result["provider_attempt_error_code"] == "material_not_found"
+    assert result["provider_error_classification"] == "blocked"
+    assert result["provider_errcode"] == 40096
+    assert result["provider_http_status"] == 400
+    assert result["provider_blocked"] is True
+    assert result["target_values_redacted"] is True
+    assert result["error_messages_redacted"] is True
+    serialized = json.dumps(result, sort_keys=True)
+    assert "secret-bearing" not in serialized
+    assert "must-not-appear" not in serialized
 
 
 def test_loopback_evidence_requires_exact_signed_receipt_and_policy(

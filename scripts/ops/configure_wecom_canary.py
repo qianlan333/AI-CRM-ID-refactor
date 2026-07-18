@@ -120,23 +120,31 @@ def load_canary_spec(path_value: str) -> dict[str, tuple[str, ...]]:
     effect_types = set(result["enabled_effect_types"])
     if not effect_types or not effect_types.issubset(set(WECOM_EFFECT_TYPES)):
         raise ValueError("enabled_effect_types must be a non-empty supported WeCom subset")
-    if effect_types & {
-        WECOM_MESSAGE_PRIVATE_SEND,
-        "wecom.welcome_message.send",
-        "wecom.contact.tag.mark",
-        "wecom.contact.tag.unmark",
-        "wecom.profile.update",
-        "wecom.external_contact.detail.fetch",
-    } and not result["external_userids"]:
+    if (
+        effect_types
+        & {
+            WECOM_MESSAGE_PRIVATE_SEND,
+            "wecom.welcome_message.send",
+            "wecom.contact.tag.mark",
+            "wecom.contact.tag.unmark",
+            "wecom.profile.update",
+            "wecom.external_contact.detail.fetch",
+        }
+        and not result["external_userids"]
+    ):
         raise ValueError("the selected effects require external_userids")
-    if effect_types & {
-        WECOM_MESSAGE_PRIVATE_SEND,
-        WECOM_MESSAGE_GROUP_SEND,
-        "wecom.welcome_message.send",
-        "wecom.contact.tag.mark",
-        "wecom.contact.tag.unmark",
-        "wecom.profile.update",
-    } and not result["owner_userids"]:
+    if (
+        effect_types
+        & {
+            WECOM_MESSAGE_PRIVATE_SEND,
+            WECOM_MESSAGE_GROUP_SEND,
+            "wecom.welcome_message.send",
+            "wecom.contact.tag.mark",
+            "wecom.contact.tag.unmark",
+            "wecom.profile.update",
+        }
+        and not result["owner_userids"]
+    ):
         raise ValueError("the selected effects require owner_userids")
     if WECOM_MESSAGE_GROUP_SEND in effect_types and not result["group_chat_ids"]:
         raise ValueError("group message canary requires group_chat_ids")
@@ -157,18 +165,14 @@ def _settings_for_enable(spec: dict[str, tuple[str, ...]]) -> dict[str, str]:
         DEFAULT_SENDER_KEY: spec["owner_userids"][0] if spec["owner_userids"] else "",
         ENABLED_TYPES_KEY: ",".join(spec["enabled_effect_types"]),
         "AICRM_WECOM_EXECUTION_MODE": "execute",
+        "AICRM_WECOM_PRIVATE_ADAPTER_MODE": ("production" if WECOM_MESSAGE_PRIVATE_SEND in effect_types else "disabled"),
+        "AICRM_WECOM_GROUP_ADAPTER_MODE": ("production" if WECOM_MESSAGE_GROUP_SEND in effect_types else "disabled"),
         "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE": "true",
         "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY": "false",
         "AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED": "true",
-        "AICRM_ENABLE_REAL_WECOM_PRIVATE_MESSAGE": (
-            "true" if WECOM_MESSAGE_PRIVATE_SEND in effect_types else "false"
-        ),
-        "AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE": (
-            "true" if WECOM_MESSAGE_GROUP_SEND in effect_types else "false"
-        ),
-        "AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE": (
-            "true" if WECOM_MEDIA_UPLOAD in effect_types else "false"
-        ),
+        "AICRM_ENABLE_REAL_WECOM_PRIVATE_MESSAGE": ("true" if WECOM_MESSAGE_PRIVATE_SEND in effect_types else "false"),
+        "AICRM_ENABLE_REAL_WECOM_GROUP_MESSAGE": ("true" if WECOM_MESSAGE_GROUP_SEND in effect_types else "false"),
+        "AICRM_EXTERNAL_EFFECT_MEDIA_UPLOAD_EXECUTE": ("true" if WECOM_MEDIA_UPLOAD in effect_types else "false"),
     }
 
 
@@ -183,6 +187,8 @@ def _settings_for_disable() -> dict[str, str]:
         DEFAULT_SENDER_KEY: "",
         ENABLED_TYPES_KEY: "",
         "AICRM_WECOM_EXECUTION_MODE": "disabled",
+        "AICRM_WECOM_PRIVATE_ADAPTER_MODE": "disabled",
+        "AICRM_WECOM_GROUP_ADAPTER_MODE": "disabled",
         "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE": "false",
         "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY": "true",
         "AICRM_EXTERNAL_EFFECT_TEST_RECEIVER_ENABLED": "true",
@@ -215,6 +221,10 @@ def main(argv: list[str] | None = None) -> int:
         "expected_policy_version": str(args.expected_policy_version),
         "allowlist_counts": _counts(spec),
         "enabled_effect_type_count": len((spec or {}).get("enabled_effect_types", ())),
+        "provider_adapter_modes": {
+            "private": desired["AICRM_WECOM_PRIVATE_ADAPTER_MODE"],
+            "group": desired["AICRM_WECOM_GROUP_ADAPTER_MODE"],
+        },
         "target_values_redacted": True,
         "real_external_call_executed": False,
     }
@@ -319,11 +329,7 @@ def main(argv: list[str] | None = None) -> int:
                 "applied": True,
                 "configuration_hash": configuration_hash(after),
                 "claim_enabled": bool(resumed.claim_enabled) if resumed is not None else False,
-                "external_claim_scope": (
-                    str(resumed.external_claim_scope)
-                    if resumed is not None
-                    else state.external_claim_scope
-                ),
+                "external_claim_scope": (str(resumed.external_claim_scope) if resumed is not None else state.external_claim_scope),
             },
             ensure_ascii=False,
             sort_keys=True,
