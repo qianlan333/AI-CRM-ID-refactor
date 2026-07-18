@@ -608,6 +608,14 @@ python3 -m scripts.ops.ensure_runtime_environment \
 set -a
 source /home/ubuntu/.openclaw-wecom-pg.env
 set +a
+python3 - <<'PY'
+from aicrm_next.shared.wecom_runtime import load_wecom_execution_config
+
+config = load_wecom_execution_config()
+if config.conflict:
+    raise SystemExit("WeCom execution config remains conflicting after deprecated environment cleanup")
+print(f"WeCom execution config coherent: mode={config.execution_mode}")
+PY
 refresh_schema_recovery_target
 # Identity preflight must fail before any runtime unit is stopped.
 python3 scripts/ops/check_unionid_identity_cutover.py \
