@@ -102,5 +102,6 @@ def test_canary_requests_require_post_plan_authorization_and_pass_exact_target_g
     assert group["payload"]["mention_all"] is False
     profile = next(request for request in requests if request["scenario"] == "profile")
     assert profile["effect_type"] == "wecom.profile.update"
+    assert profile["adapter_name"] == "wecom_profile"
     assert profile["payload"]["follow_user_userid"] == "owner_canary"
     assert profile["payload_summary"]["disposable_relationship_only"] is True
