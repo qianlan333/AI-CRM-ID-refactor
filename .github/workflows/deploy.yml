@@ -260,6 +260,7 @@ jobs:
               git status --short --untracked-files=all
               exit 1
             fi
+            bash scripts/ops/normalize_queue_runtime_generation_marker.sh
             set -a
             source /home/ubuntu/.openclaw-wecom-pg.env
             set +a

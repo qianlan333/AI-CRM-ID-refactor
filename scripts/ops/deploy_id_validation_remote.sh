@@ -531,23 +531,7 @@ git archive "$verified_sha" \
   | tar -x -C "$release_control_dir"
 release_control_manager="$release_control_dir/scripts/ops/manage_production_runtime_units.py"
 release_control_manifest="$release_control_dir/deploy/production_runtime_units.json"
-runtime_generation_marker="/home/ubuntu/.aicrm-queue-runtime-generation.env"
-if sudo test -e "$runtime_generation_marker" || sudo test -L "$runtime_generation_marker"; then
-  if sudo test -L "$runtime_generation_marker" || ! sudo test -f "$runtime_generation_marker"; then
-    echo "queue runtime generation marker must be one regular non-symlink file"
-    exit 1
-  fi
-  sudo chown --no-dereference ubuntu:ubuntu "$runtime_generation_marker"
-  chmod 0600 "$runtime_generation_marker"
-  if [ -L "$runtime_generation_marker" ] \
-    || [ ! -f "$runtime_generation_marker" ] \
-    || [ ! -r "$runtime_generation_marker" ] \
-    || [ "$(stat -c '%U:%G:%a' "$runtime_generation_marker")" != "ubuntu:ubuntu:600" ]; then
-    echo "queue runtime generation marker ownership repair failed closed"
-    exit 1
-  fi
-  echo "queue runtime generation marker ownership normalized"
-fi
+bash "$release_control_dir/scripts/ops/normalize_queue_runtime_generation_marker.sh"
 set -a
 source /home/ubuntu/.openclaw-wecom-pg.env
 set +a
