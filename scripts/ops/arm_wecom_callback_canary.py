@@ -179,6 +179,48 @@ def _baseline_inbox_id(database_url: str) -> int:
     return int((row or {}).get("id") or 0)
 
 
+def _matching_callbacks(
+    connection: Any,
+    *,
+    baseline_id: int,
+    corp_id: str,
+    external_userid: str,
+    owner_userid: str,
+    state: str,
+) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        """
+        SELECT id, status, processing_summary_json, payload_json,
+               received_at, started_at, execution_id, policy_version,
+               duplicate_count, attempt_count, worker_generation,
+               last_error_code
+        FROM webhook_inbox
+        WHERE id > %s
+          AND provider = 'wecom'
+          AND event_family = 'external_contact'
+          AND route = %s
+          AND event_type = 'change_external_contact'
+          AND change_type = 'add_external_contact'
+          AND corp_id = %s
+          AND payload_json->>'ExternalUserID' = %s
+          AND payload_json->>'UserID' = %s
+          AND payload_json->>'State' = %s
+          AND COALESCE(payload_json->>'WelcomeCode', '') <> ''
+        ORDER BY id ASC
+        LIMIT 2
+        """,
+        (
+            int(baseline_id),
+            EXPECTED_ROUTE,
+            corp_id,
+            external_userid,
+            owner_userid,
+            state,
+        ),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def wait_for_callback(
     database_url: str,
     *,
@@ -199,39 +241,18 @@ def wait_for_callback(
         if hasattr(connection, "autocommit"):
             connection.autocommit = True
         while monotonic() < deadline:
-            rows = connection.execute(
-                """
-                SELECT id, status, processing_summary_json, payload_json,
-                       received_at, execution_id, policy_version, duplicate_count,
-                       attempt_count, last_error_code
-                FROM webhook_inbox
-                WHERE id > %s
-                  AND provider = 'wecom'
-                  AND event_family = 'external_contact'
-                  AND route = %s
-                  AND event_type = 'change_external_contact'
-                  AND change_type = 'add_external_contact'
-                  AND corp_id = %s
-                  AND payload_json->>'ExternalUserID' = %s
-                  AND payload_json->>'UserID' = %s
-                  AND payload_json->>'State' = %s
-                  AND COALESCE(payload_json->>'WelcomeCode', '') <> ''
-                ORDER BY id ASC
-                LIMIT 2
-                """,
-                (
-                    int(baseline_id),
-                    EXPECTED_ROUTE,
-                    corp_id,
-                    external_userid,
-                    owner_userid,
-                    state,
-                ),
-            ).fetchall()
+            rows = _matching_callbacks(
+                connection,
+                baseline_id=baseline_id,
+                corp_id=corp_id,
+                external_userid=external_userid,
+                owner_userid=owner_userid,
+                state=state,
+            )
             if len(rows) > 1:
                 raise CallbackCanaryError("more than one matching callback arrived after the armed boundary")
             if rows:
-                row = dict(rows[0])
+                row = rows[0]
                 if str(row.get("policy_version") or "") != policy_version:
                     raise CallbackCanaryError("callback policy version is not exact")
                 _assert_event_fresh(
@@ -241,6 +262,37 @@ def wait_for_callback(
                 return row
             sleep(0.05)
     raise CallbackCanaryError("no matching callback arrived before the arm timeout")
+
+
+def assert_single_callback(
+    database_url: str,
+    *,
+    baseline_id: int,
+    inbox_id: int,
+    corp_id: str,
+    external_userid: str,
+    owner_userid: str,
+    state: str,
+    connect: Callable[[str], Any] = open_runtime_connection,
+) -> dict[str, Any]:
+    """Re-check the armed boundary immediately before authorization and pass."""
+
+    with connect(database_url) as connection:
+        if hasattr(connection, "autocommit"):
+            connection.autocommit = True
+        rows = _matching_callbacks(
+            connection,
+            baseline_id=baseline_id,
+            corp_id=corp_id,
+            external_userid=external_userid,
+            owner_userid=owner_userid,
+            state=state,
+        )
+    if len(rows) != 1 or int(rows[0].get("id") or 0) != int(inbox_id):
+        raise CallbackCanaryError("armed boundary no longer contains exactly one matching callback")
+    if int(rows[0].get("duplicate_count") or 0) != 0:
+        raise CallbackCanaryError("armed callback was delivered more than once")
+    return rows[0]
 
 
 def wait_for_inbox_success(
@@ -260,8 +312,9 @@ def wait_for_inbox_success(
             row = connection.execute(
                 """
                 SELECT id, status, processing_summary_json, payload_json,
-                       received_at, execution_id, policy_version, duplicate_count,
-                       attempt_count, last_error_code
+                       received_at, started_at, execution_id, policy_version,
+                       duplicate_count, attempt_count, worker_generation,
+                       last_error_code
                 FROM webhook_inbox WHERE id = %s
                 """,
                 (int(inbox_id),),
@@ -279,6 +332,16 @@ def wait_for_inbox_success(
                 raise CallbackCanaryError("callback inbox reached a failed state before job authorization")
             sleep(0.05)
     raise CallbackCanaryError("callback inbox did not finish inside the safety window")
+
+
+def _assert_clean_worker_processing(inbox: dict[str, Any], *, generation: int) -> None:
+    if (
+        int(inbox.get("duplicate_count") or 0) != 0
+        or int(inbox.get("attempt_count") or 0) != 0
+        or not inbox.get("started_at")
+        or int(inbox.get("worker_generation") or 0) != int(generation)
+    ):
+        raise CallbackCanaryError("callback must have one clean runtime claim with no retry or duplicate")
 
 
 def _freeze_jobs(
@@ -362,6 +425,7 @@ def _job_map(
         or str((welcome.payload_json.get("text") or {}).get("content") or "") != asset["welcome_message"]
         or str(welcome.payload_json.get("scene_value") or "") != asset["scene_value"]
         or not str(welcome.payload_json.get("welcome_code") or "")
+        or bool(welcome.payload_json.get("attachments"))
     ):
         raise CallbackCanaryError("welcome job does not match the dedicated asset")
     if (
@@ -371,7 +435,7 @@ def _job_map(
         or list(tag.payload_json.get("remove_tags") or [])
     ):
         raise CallbackCanaryError("tag job does not match the dedicated asset")
-    if str(detail.payload_json.get("external_userid") or "") != external_userid or str(detail.payload_json.get("follow_user_userid") or "") != owner_userid:
+    if str(detail.payload_json.get("external_userid") or "") != external_userid or str(detail.payload_json.get("owner_userid") or "") != owner_userid:
         raise CallbackCanaryError("detail job does not match the dedicated target")
     return {
         "welcome": welcome,
@@ -507,8 +571,7 @@ def main(argv: list[str] | None = None) -> int:
         inbox_id=int(row["id"]),
         timeout_seconds=float(args.inbox_timeout_seconds),
     )
-    if int(inbox.get("duplicate_count") or 0) != 0 or int(inbox.get("attempt_count") or 0) != 1:
-        raise CallbackCanaryError("callback must be ingested once and processed in one worker attempt")
+    _assert_clean_worker_processing(inbox, generation=int(args.generation))
     _assert_event_fresh(
         inbox,
         maximum_age_seconds=float(args.maximum_event_age_seconds),
@@ -516,6 +579,15 @@ def main(argv: list[str] | None = None) -> int:
     summary = dict(inbox.get("processing_summary_json") or {})
     job_ids = [int(value or 0) for value in summary.get("external_effect_job_ids") or []]
     _freeze_jobs(database_url, job_ids=job_ids)
+    callback_identity = {
+        "baseline_id": baseline_id,
+        "inbox_id": int(inbox["id"]),
+        "corp_id": corp_id,
+        "external_userid": spec["external_userids"][0],
+        "owner_userid": asset["owner_userid"],
+        "state": asset["scene_value"],
+    }
+    assert_single_callback(database_url, **callback_identity)
     repository = SQLAlchemyExternalEffectRepository()
     jobs = _job_map(
         repository,
@@ -550,13 +622,18 @@ def main(argv: list[str] | None = None) -> int:
             reason=f"welcome boundary confirmed; authorize {kind}: {reason}",
         )
 
-    evidence: list[dict[str, Any]] = []
+    completed_jobs: list[tuple[str, Any, list[Any]]] = []
     for kind in ("welcome", "entry_tag", "identity_detail"):
         final_job, attempts = wait_for_result(
             repository,
             job_id=int(jobs[kind].id),
             timeout_seconds=float(args.result_timeout_seconds),
         )
+        completed_jobs.append((kind, final_job, attempts))
+
+    assert_single_callback(database_url, **callback_identity)
+    evidence: list[dict[str, Any]] = []
+    for _kind, final_job, attempts in completed_jobs:
         evidence.append(
             record_external_effect_evidence(
                 database_url,

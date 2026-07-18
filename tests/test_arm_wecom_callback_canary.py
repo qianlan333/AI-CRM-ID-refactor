@@ -69,10 +69,12 @@ def _inbox_row(*, status: str = "received") -> dict:
             "WelcomeCode": "welcome-secret",
         },
         "received_at": now.isoformat(),
+        "started_at": now.isoformat(),
         "execution_id": "exe_callback_canary",
         "policy_version": POLICY_VERSION,
         "duplicate_count": 0,
-        "attempt_count": 1,
+        "attempt_count": 0,
+        "worker_generation": 1,
     }
 
 
@@ -166,6 +168,54 @@ def test_wait_for_callback_requires_one_exact_fresh_policy_bound_row() -> None:
     ]
 
 
+def test_single_callback_recheck_rejects_a_late_second_match() -> None:
+    rows = [_inbox_row(), {**_inbox_row(), "id": 92}]
+
+    class Connection:
+        autocommit = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        def execute(self, _statement, _parameters):
+            return SimpleNamespace(fetchall=lambda: rows)
+
+    with pytest.raises(arm.CallbackCanaryError, match="exactly one matching callback"):
+        arm.assert_single_callback(
+            "postgresql://canary",
+            baseline_id=90,
+            inbox_id=91,
+            corp_id="corp_canary",
+            external_userid="external_canary",
+            owner_userid="owner_canary",
+            state="scene_canary",
+            connect=lambda _url: Connection(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("duplicate_count", 1),
+        ("attempt_count", 1),
+        ("started_at", ""),
+        ("worker_generation", 2),
+    ),
+)
+def test_clean_worker_processing_rejects_duplicate_retry_or_wrong_generation(
+    field: str,
+    value: object,
+) -> None:
+    inbox = _inbox_row(status="succeeded")
+    inbox[field] = value
+
+    with pytest.raises(arm.CallbackCanaryError, match="one clean runtime claim"):
+        arm._assert_clean_worker_processing(inbox, generation=1)
+
+
 def test_job_map_requires_exact_welcome_tag_and_detail_payloads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -202,7 +252,7 @@ def test_job_map_requires_exact_welcome_tag_and_detail_payloads(
             max_attempts=1,
             payload_json={
                 "external_userid": "external_canary",
-                "follow_user_userid": "owner_canary",
+                "owner_userid": "owner_canary",
             },
         ),
     }
@@ -223,6 +273,17 @@ def test_job_map_requires_exact_welcome_tag_and_detail_payloads(
 
     assert set(result) == {"welcome", "entry_tag", "identity_detail"}
     assert result["welcome"].id == 11
+
+    jobs[11].payload_json["attachments"] = [{"msgtype": "image", "media_id": "unreviewed-media"}]
+    with pytest.raises(arm.CallbackCanaryError, match="welcome job does not match"):
+        arm._job_map(
+            Repository(),
+            job_ids=[11, 12, 13],
+            external_userid="external_canary",
+            owner_userid="owner_canary",
+            asset={key: str(value) for key, value in _asset().items()},
+            policy_version=POLICY_VERSION,
+        )
 
 
 def test_apply_authorizes_welcome_before_other_effects_and_records_all_evidence(
@@ -263,6 +324,13 @@ def test_apply_authorizes_welcome_before_other_effects_and_records_all_evidence(
     monkeypatch.setattr(arm, "wait_for_callback", lambda *args, **kwargs: inbox)
     monkeypatch.setattr(arm, "wait_for_inbox_success", lambda *args, **kwargs: inbox)
     monkeypatch.setattr(arm, "_freeze_jobs", lambda *args, **kwargs: None)
+    callback_rechecks: list[int] = []
+
+    def assert_single(_database_url, **kwargs):
+        callback_rechecks.append(int(kwargs["inbox_id"]))
+        return inbox
+
+    monkeypatch.setattr(arm, "assert_single_callback", assert_single)
     monkeypatch.setattr(arm, "SQLAlchemyExternalEffectRepository", lambda: repository)
     monkeypatch.setattr(arm, "ExternalEffectService", lambda _repo: SimpleNamespace())
     monkeypatch.setattr(arm, "_job_map", lambda *args, **kwargs: jobs)
@@ -338,3 +406,4 @@ def test_apply_authorizes_welcome_before_other_effects_and_records_all_evidence(
     assert len(output["evidence"]) == 3
     assert output["target_values_redacted"] is True
     assert "welcome-secret" not in json.dumps(output)
+    assert callback_rechecks == [91, 91]

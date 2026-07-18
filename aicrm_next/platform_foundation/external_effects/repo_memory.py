@@ -966,6 +966,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 last_error_code="" if row.get("status") == "blocked" else row.get("last_error_code"),
                 last_error_message="" if row.get("status") == "blocked" else row.get("last_error_message"),
                 completed_at="" if row.get("status") == "blocked" else row.get("completed_at"),
+                available_at=now,
             )
 
     def record_attempt(
