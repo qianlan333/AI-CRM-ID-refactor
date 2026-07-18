@@ -44,9 +44,7 @@ def _request_json(url: str, *, timeout_seconds: float = 10.0) -> tuple[int, dict
 
 def _http_ready(*, local_base_url: str, public_health_url: str, expected_sha: str) -> dict[str, Any]:
     local_status, local_headers, _ = _request_json(f"{local_base_url.rstrip('/')}/health")
-    system_status, _, system_payload = _request_json(
-        f"{local_base_url.rstrip('/')}/api/system/health"
-    )
+    system_status, _, system_payload = _request_json(f"{local_base_url.rstrip('/')}/api/system/health")
     public_status, public_headers, _ = _request_json(public_health_url)
     release = dict(system_payload.get("components", {}).get("release", {}))
     migration = dict(system_payload.get("components", {}).get("migration", {}))
@@ -78,39 +76,44 @@ def _workers_ready(*, expected_sha: str) -> dict[str, Any]:
     control = dict(snapshot.get("control") or {})
     expected_generation = int(control.get("active_generation") or 0)
     expected_rollout_mode = str(control.get("rollout_mode") or "")
+    claim_enabled = bool(control.get("claim_enabled"))
+    if claim_enabled != (expected_rollout_mode in {"canary", "execute"}):
+        raise RuntimeError("execution runtime control claim gate and rollout mode are inconsistent")
     fresh_workers = [dict(worker) for worker in snapshot.get("workers") or () if bool(worker.get("fresh"))]
     conflicts = Counter()
     for worker in fresh_workers:
         if not bool(worker.get("listener_connected")):
             conflicts["listener_disconnected"] += 1
-        if (
-            str(worker.get("release_sha") or "") != expected_sha
-            or not bool(worker.get("release_matches"))
-        ):
+        if str(worker.get("release_sha") or "") != expected_sha or not bool(worker.get("release_matches")):
             conflicts["release_mismatch"] += 1
         if int(worker.get("generation") or 0) != expected_generation:
             conflicts["generation_mismatch"] += 1
-        if str(worker.get("rollout_mode") or "") != expected_rollout_mode:
-            conflicts["rollout_mode_mismatch"] += 1
     if conflicts:
         summary = ",".join(f"{key}={value}" for key, value in sorted(conflicts.items()))
-        raise RuntimeError(
-            f"a fresh execution runtime heartbeat conflicts with the live release ({summary})"
-        )
+        raise RuntimeError(f"a fresh execution runtime heartbeat conflicts with the live release ({summary})")
     counts = Counter(str(worker.get("queue_kind") or "") for worker in fresh_workers)
     if counts != EXPECTED_WORKERS:
         actual = ",".join(f"{key}={value}" for key, value in sorted(counts.items())) or "none"
-        expected = ",".join(
-            f"{key}={value}" for key, value in sorted(EXPECTED_WORKERS.items())
+        expected = ",".join(f"{key}={value}" for key, value in sorted(EXPECTED_WORKERS.items()))
+        raise RuntimeError(f"execution runtime listener heartbeat set is not exact (actual:{actual}; expected:{expected})")
+    worker_modes = Counter(str(worker.get("rollout_mode") or "") for worker in fresh_workers)
+    expected_mode_sets = (
+        (Counter({"canary": sum(EXPECTED_WORKERS.values())}),)
+        if claim_enabled
+        else (
+            Counter({"standby": sum(EXPECTED_WORKERS.values())}),
+            Counter({"canary": sum(EXPECTED_WORKERS.values())}),
         )
-        raise RuntimeError(
-            "execution runtime listener heartbeat set is not exact "
-            f"(actual:{actual}; expected:{expected})"
-        )
+    )
+    if worker_modes not in expected_mode_sets:
+        actual = ",".join(f"{key or 'empty'}={value}" for key, value in sorted(worker_modes.items()))
+        allowed = "canary" if claim_enabled else "uniform_canary_or_standby"
+        raise RuntimeError(f"execution runtime worker capability heartbeat set is not exact (actual:{actual or 'none'}; allowed:{allowed})")
     return {
         "active_generation": expected_generation,
-        "claim_enabled": bool(control.get("claim_enabled")),
+        "claim_enabled": claim_enabled,
         "rollout_mode": expected_rollout_mode,
+        "worker_rollout_modes": dict(sorted(worker_modes.items())),
         "fresh_listener_count": sum(counts.values()),
         "worker_counts": dict(sorted(counts.items())),
     }
@@ -147,9 +150,7 @@ def check_release_readiness(
             if attempt < max(1, attempts):
                 time.sleep(max(0.0, retry_seconds))
     failure_reason = str(last_error or "unknown readiness error").strip()
-    raise RuntimeError(
-        f"ID validation release readiness failed: {failure_reason}"
-    ) from last_error
+    raise RuntimeError(f"ID validation release readiness failed: {failure_reason}") from last_error
 
 
 def _parser() -> argparse.ArgumentParser:
