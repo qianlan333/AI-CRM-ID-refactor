@@ -168,3 +168,56 @@ def test_readiness_retries_transient_http_failure(monkeypatch: pytest.MonkeyPatc
 
     assert attempts == 2
     assert result["attempt"] == 2
+
+
+def test_final_readiness_error_preserves_sanitized_worker_count_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(readiness, "_http_ready", lambda **_kwargs: {"migration_ready": True})
+
+    class ReadModel:
+        def runtime_snapshot(self) -> dict[str, Any]:
+            return _snapshot(workers=[_worker("external_effect")])
+
+    monkeypatch.setattr(readiness, "ExecutionRuntimeReadModel", ReadModel)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"readiness failed: execution runtime listener heartbeat set is not exact "
+            r"\(actual:external_effect=1; expected:external_effect=4,internal_event=2,"
+            r"internal_outbox=2,webhook_inbox=1\)"
+        ),
+    ):
+        readiness.check_release_readiness(
+            local_base_url="http://127.0.0.1:5001",
+            public_health_url="https://id-dev.example/health",
+            expected_sha=RELEASE_SHA,
+            attempts=1,
+        )
+
+
+def test_worker_conflict_diagnostic_exposes_only_conflict_classes() -> None:
+    workers = [
+        *[_worker("external_effect") for _ in range(4)],
+        *[_worker("internal_event") for _ in range(2)],
+        *[_worker("internal_outbox") for _ in range(2)],
+        _worker("webhook_inbox"),
+    ]
+    workers[-1]["listener_connected"] = False
+    workers[-1]["generation"] = 99
+
+    class ReadModel:
+        def runtime_snapshot(self) -> dict[str, Any]:
+            return _snapshot(workers=workers)
+
+    original = readiness.ExecutionRuntimeReadModel
+    readiness.ExecutionRuntimeReadModel = ReadModel
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match=r"generation_mismatch=1,listener_disconnected=1",
+        ):
+            readiness._workers_ready(expected_sha=RELEASE_SHA)
+    finally:
+        readiness.ExecutionRuntimeReadModel = original

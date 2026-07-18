@@ -79,18 +79,34 @@ def _workers_ready(*, expected_sha: str) -> dict[str, Any]:
     expected_generation = int(control.get("active_generation") or 0)
     expected_rollout_mode = str(control.get("rollout_mode") or "")
     fresh_workers = [dict(worker) for worker in snapshot.get("workers") or () if bool(worker.get("fresh"))]
-    if any(
-        not bool(worker.get("listener_connected"))
-        or str(worker.get("release_sha") or "") != expected_sha
-        or not bool(worker.get("release_matches"))
-        or int(worker.get("generation") or 0) != expected_generation
-        or str(worker.get("rollout_mode") or "") != expected_rollout_mode
-        for worker in fresh_workers
-    ):
-        raise RuntimeError("a fresh execution runtime heartbeat conflicts with the live release")
+    conflicts = Counter()
+    for worker in fresh_workers:
+        if not bool(worker.get("listener_connected")):
+            conflicts["listener_disconnected"] += 1
+        if (
+            str(worker.get("release_sha") or "") != expected_sha
+            or not bool(worker.get("release_matches"))
+        ):
+            conflicts["release_mismatch"] += 1
+        if int(worker.get("generation") or 0) != expected_generation:
+            conflicts["generation_mismatch"] += 1
+        if str(worker.get("rollout_mode") or "") != expected_rollout_mode:
+            conflicts["rollout_mode_mismatch"] += 1
+    if conflicts:
+        summary = ",".join(f"{key}={value}" for key, value in sorted(conflicts.items()))
+        raise RuntimeError(
+            f"a fresh execution runtime heartbeat conflicts with the live release ({summary})"
+        )
     counts = Counter(str(worker.get("queue_kind") or "") for worker in fresh_workers)
     if counts != EXPECTED_WORKERS:
-        raise RuntimeError("execution runtime listener heartbeat set is not exact")
+        actual = ",".join(f"{key}={value}" for key, value in sorted(counts.items())) or "none"
+        expected = ",".join(
+            f"{key}={value}" for key, value in sorted(EXPECTED_WORKERS.items())
+        )
+        raise RuntimeError(
+            "execution runtime listener heartbeat set is not exact "
+            f"(actual:{actual}; expected:{expected})"
+        )
     return {
         "active_generation": expected_generation,
         "claim_enabled": bool(control.get("claim_enabled")),
@@ -130,7 +146,10 @@ def check_release_readiness(
             last_error = exc
             if attempt < max(1, attempts):
                 time.sleep(max(0.0, retry_seconds))
-    raise RuntimeError("ID validation release readiness failed") from last_error
+    failure_reason = str(last_error or "unknown readiness error").strip()
+    raise RuntimeError(
+        f"ID validation release readiness failed: {failure_reason}"
+    ) from last_error
 
 
 def _parser() -> argparse.ArgumentParser:
