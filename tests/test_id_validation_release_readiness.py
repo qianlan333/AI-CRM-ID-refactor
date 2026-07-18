@@ -27,19 +27,31 @@ def _system_payload(*, migration_ready: bool = True) -> dict[str, Any]:
     }
 
 
-def _worker(queue_kind: str, *, generation: int = 0, release_sha: str = RELEASE_SHA) -> dict[str, Any]:
+def _worker(
+    queue_kind: str,
+    *,
+    generation: int = 0,
+    release_sha: str = RELEASE_SHA,
+    rollout_mode: str = "standby",
+) -> dict[str, Any]:
     return {
         "queue_kind": queue_kind,
         "generation": generation,
         "release_sha": release_sha,
-        "rollout_mode": "standby",
+        "rollout_mode": rollout_mode,
         "listener_connected": True,
         "fresh": True,
         "release_matches": release_sha == RELEASE_SHA,
     }
 
 
-def _snapshot(*, workers: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _snapshot(
+    *,
+    workers: list[dict[str, Any]] | None = None,
+    generation: int = 0,
+    claim_enabled: bool = False,
+    rollout_mode: str = "standby",
+) -> dict[str, Any]:
     worker_items = workers or [
         *[_worker("external_effect") for _ in range(4)],
         *[_worker("internal_event") for _ in range(2)],
@@ -48,7 +60,11 @@ def _snapshot(*, workers: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     ]
     return {
         "ok": True,
-        "control": {"active_generation": 0, "claim_enabled": False, "rollout_mode": "standby"},
+        "control": {
+            "active_generation": generation,
+            "claim_enabled": claim_enabled,
+            "rollout_mode": rollout_mode,
+        },
         "workers": worker_items,
     }
 
@@ -132,9 +148,7 @@ def test_migration_mismatch_blocks_provenance_recovery(monkeypatch: pytest.Monke
         ],
     ),
 )
-def test_missing_or_wrong_release_heartbeat_blocks_recovery(
-    monkeypatch: pytest.MonkeyPatch, workers: list[dict[str, Any]]
-) -> None:
+def test_missing_or_wrong_release_heartbeat_blocks_recovery(monkeypatch: pytest.MonkeyPatch, workers: list[dict[str, Any]]) -> None:
     class ReadModel:
         def runtime_snapshot(self) -> dict[str, Any]:
             return _snapshot(workers=workers)
@@ -142,6 +156,90 @@ def test_missing_or_wrong_release_heartbeat_blocks_recovery(
     monkeypatch.setattr(readiness, "ExecutionRuntimeReadModel", ReadModel)
 
     with pytest.raises(RuntimeError, match="heartbeat (set is not exact|conflicts)"):
+        readiness._workers_ready(expected_sha=RELEASE_SHA)
+
+
+def test_closed_database_gate_accepts_one_uniform_hot_canary_worker_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workers = [
+        *[_worker("external_effect", generation=1, rollout_mode="canary") for _ in range(4)],
+        *[_worker("internal_event", generation=1, rollout_mode="canary") for _ in range(2)],
+        *[_worker("internal_outbox", generation=1, rollout_mode="canary") for _ in range(2)],
+        _worker("webhook_inbox", generation=1, rollout_mode="canary"),
+    ]
+
+    class ReadModel:
+        def runtime_snapshot(self) -> dict[str, Any]:
+            return _snapshot(
+                workers=workers,
+                generation=1,
+                claim_enabled=False,
+                rollout_mode="standby",
+            )
+
+    monkeypatch.setattr(readiness, "ExecutionRuntimeReadModel", ReadModel)
+
+    result = readiness._workers_ready(expected_sha=RELEASE_SHA)
+
+    assert result["claim_enabled"] is False
+    assert result["rollout_mode"] == "standby"
+    assert result["worker_rollout_modes"] == {"canary": 9}
+
+
+def test_open_database_gate_requires_every_worker_to_be_canary_capable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workers = [
+        *[_worker("external_effect", generation=1, rollout_mode="canary") for _ in range(4)],
+        *[_worker("internal_event", generation=1, rollout_mode="canary") for _ in range(2)],
+        *[_worker("internal_outbox", generation=1, rollout_mode="canary") for _ in range(2)],
+        _worker("webhook_inbox", generation=1, rollout_mode="standby"),
+    ]
+
+    class ReadModel:
+        def runtime_snapshot(self) -> dict[str, Any]:
+            return _snapshot(
+                workers=workers,
+                generation=1,
+                claim_enabled=True,
+                rollout_mode="canary",
+            )
+
+    monkeypatch.setattr(readiness, "ExecutionRuntimeReadModel", ReadModel)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"worker capability heartbeat set is not exact .*allowed:canary",
+    ):
+        readiness._workers_ready(expected_sha=RELEASE_SHA)
+
+
+def test_closed_database_gate_rejects_mixed_worker_capability_modes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workers = [
+        *[_worker("external_effect", generation=1, rollout_mode="canary") for _ in range(4)],
+        *[_worker("internal_event", generation=1, rollout_mode="canary") for _ in range(2)],
+        *[_worker("internal_outbox", generation=1, rollout_mode="standby") for _ in range(2)],
+        _worker("webhook_inbox", generation=1, rollout_mode="standby"),
+    ]
+
+    class ReadModel:
+        def runtime_snapshot(self) -> dict[str, Any]:
+            return _snapshot(
+                workers=workers,
+                generation=1,
+                claim_enabled=False,
+                rollout_mode="standby",
+            )
+
+    monkeypatch.setattr(readiness, "ExecutionRuntimeReadModel", ReadModel)
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"actual:canary=6,standby=3; allowed:uniform_canary_or_standby",
+    ):
         readiness._workers_ready(expected_sha=RELEASE_SHA)
 
 
