@@ -531,6 +531,7 @@ git archive "$verified_sha" \
   | tar -x -C "$release_control_dir"
 release_control_manager="$release_control_dir/scripts/ops/manage_production_runtime_units.py"
 release_control_manifest="$release_control_dir/deploy/production_runtime_units.json"
+bash "$release_control_dir/scripts/ops/normalize_queue_runtime_generation_marker.sh"
 set -a
 source /home/ubuntu/.openclaw-wecom-pg.env
 set +a

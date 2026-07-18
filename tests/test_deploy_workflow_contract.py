@@ -11,6 +11,9 @@ RUNTIME_DIR = ROOT / ("wecom_ability" + "_service")
 RUNTIME_UNITS_HELPER = "python3 scripts/ops/manage_production_runtime_units.py"
 TEST_DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 REMOTE_DEPLOY_SCRIPT = ROOT / "scripts" / "ops" / "deploy_id_validation_remote.sh"
+GENERATION_MARKER_NORMALIZER = (
+    ROOT / "scripts" / "ops" / "normalize_queue_runtime_generation_marker.sh"
+)
 PRODUCTION_PROMOTION_WORKFLOW = ROOT / ".github" / "workflows" / "promote-production.yml"
 
 
@@ -73,6 +76,37 @@ def test_remote_deploy_is_an_executable_script_path_with_explicit_environment() 
     assert REMOTE_DEPLOY_SCRIPT.stat().st_mode & 0o111
     assert remote_script.startswith("#!/usr/bin/env bash\nset -e\nset -o pipefail\n")
     assert "${{" not in remote_script
+
+
+def test_remote_deploy_repairs_legacy_generation_marker_ownership_before_runtime_control() -> None:
+    remote_script = REMOTE_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    workflow = TEST_DEPLOY_WORKFLOW.read_text(encoding="utf-8")
+    normalizer = GENERATION_MARKER_NORMALIZER.read_text(encoding="utf-8")
+    repair_index = remote_script.index(
+        'bash "$release_control_dir/scripts/ops/normalize_queue_runtime_generation_marker.sh"'
+    )
+    source_index = remote_script.index(
+        "source /home/ubuntu/.openclaw-wecom-pg.env",
+        repair_index,
+    )
+    noop_start = workflow.index("      - name: Verify already active ID release")
+    noop_end = workflow.index("      - name: Record successful no-op provenance", noop_start)
+    noop = workflow[noop_start:noop_end]
+
+    assert repair_index < source_index
+    assert "bash scripts/ops/normalize_queue_runtime_generation_marker.sh" in noop
+    assert noop.index("normalize_queue_runtime_generation_marker.sh") < noop.index(
+        "python3 scripts/ops/manage_production_runtime_units.py --phase verify --execute"
+    )
+    assert 'sudo test -e "$runtime_generation_marker" || sudo test -L' in normalizer
+    assert 'sudo test -L "$runtime_generation_marker"' in normalizer
+    assert 'sudo test -f "$runtime_generation_marker"' in normalizer
+    assert 'sudo chown --no-dereference ubuntu:ubuntu "$runtime_generation_marker"' in normalizer
+    assert 'chmod 0600 "$runtime_generation_marker"' in normalizer
+    assert "stat -c '%U:%G:%a'" in normalizer
+    assert '!= "ubuntu:ubuntu:600"' in normalizer
+    assert normalizer.index("sudo test -L") < normalizer.index("sudo chown --no-dereference")
+    assert normalizer.index("sudo chown --no-dereference") < normalizer.index("chmod 0600")
 
 
 def test_remote_deploy_snapshots_immutable_inputs_before_sourcing_server_environment(

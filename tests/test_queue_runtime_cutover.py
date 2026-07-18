@@ -298,6 +298,41 @@ def test_cutover_cli_rejects_manual_legacy_owner_subset() -> None:
         )
 
 
+def test_generation_marker_is_installed_private_and_owned_by_runtime_service(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    commands: list[tuple[str, ...]] = []
+    marker = tmp_path / "queue-runtime-generation.env"
+
+    def fake_run(command, **_kwargs):
+        commands.append(tuple(command))
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(cutover_queue_runtime_generation, "_run", fake_run)
+    monkeypatch.setattr(cutover_queue_runtime_generation, "RUNTIME_GENERATION_ENV", marker)
+
+    cutover_queue_runtime_generation.SystemdQueueRuntimeLifecycle.write_generation_marker(
+        generation=17,
+        committed=True,
+        test_only=True,
+    )
+
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[:8] == (
+        "sudo",
+        "install",
+        "-o",
+        "ubuntu",
+        "-g",
+        "ubuntu",
+        "-m",
+        "0600",
+    )
+    assert command[-1] == str(marker)
+
+
 def test_scope_transition_cli_is_plan_only_and_lists_fail_closed_sequence(capsys) -> None:
     exit_code = transition_queue_runtime_scope.main(
         [
