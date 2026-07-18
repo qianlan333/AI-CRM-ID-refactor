@@ -66,7 +66,20 @@ class SystemdQueueRuntimeLifecycle:
             handle.write(payload)
             staged = Path(handle.name)
         try:
-            _run(("sudo", "install", "-m", "0600", str(staged), str(RUNTIME_GENERATION_ENV)))
+            _run(
+                (
+                    "sudo",
+                    "install",
+                    "-o",
+                    "ubuntu",
+                    "-g",
+                    "ubuntu",
+                    "-m",
+                    "0600",
+                    str(staged),
+                    str(RUNTIME_GENERATION_ENV),
+                )
+            )
         finally:
             staged.unlink(missing_ok=True)
 

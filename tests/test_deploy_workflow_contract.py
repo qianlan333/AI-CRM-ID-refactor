@@ -75,6 +75,27 @@ def test_remote_deploy_is_an_executable_script_path_with_explicit_environment() 
     assert "${{" not in remote_script
 
 
+def test_remote_deploy_repairs_legacy_generation_marker_ownership_before_runtime_control() -> None:
+    remote_script = REMOTE_DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    repair_index = remote_script.index(
+        'runtime_generation_marker="/home/ubuntu/.aicrm-queue-runtime-generation.env"'
+    )
+    source_index = remote_script.index(
+        "source /home/ubuntu/.openclaw-wecom-pg.env",
+        repair_index,
+    )
+    repair = remote_script[repair_index:source_index]
+
+    assert 'sudo test -L "$runtime_generation_marker"' in repair
+    assert 'sudo test -f "$runtime_generation_marker"' in repair
+    assert 'sudo chown --no-dereference ubuntu:ubuntu "$runtime_generation_marker"' in repair
+    assert 'chmod 0600 "$runtime_generation_marker"' in repair
+    assert "stat -c '%U:%G:%a'" in repair
+    assert '!= "ubuntu:ubuntu:600"' in repair
+    assert repair.index("sudo test -L") < repair.index("sudo chown --no-dereference")
+    assert repair.index("sudo chown --no-dereference") < repair.index("chmod 0600")
+
+
 def test_remote_deploy_snapshots_immutable_inputs_before_sourcing_server_environment(
     tmp_path: Path,
 ) -> None:
