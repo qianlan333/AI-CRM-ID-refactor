@@ -37,10 +37,18 @@ def test_queue_operations_workflow_uses_pinned_ssh_and_private_canary_spec() -> 
     assert "fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}" in source
     assert "script_path: scripts/ops/run_id_validation_queue_operation.sh" in source
     assert "ID_VALIDATION_WECOM_CANARY_SPEC_B64" in source
+    assert "ID_VALIDATION_WECOM_CHANNEL_ASSET_B64" in source
+    assert "ID_VALIDATION_WECOM_CALLBACK_EVENT_B64" in source
     assert "WECOM_CANARY_SPEC_B64" in source
+    assert "WECOM_CHANNEL_ASSET_B64" in source
+    assert "WECOM_CALLBACK_EVENT_B64" in source
     job_env = source[source.index("    env:") : source.index("    steps:")]
     assert "ID_VALIDATION_WECOM_CANARY_SPEC_B64" not in job_env
-    assert "Execute guarded private-spec queue operation on 49" in source
+    assert "ID_VALIDATION_WECOM_CHANNEL_ASSET_B64" not in job_env
+    assert "ID_VALIDATION_WECOM_CALLBACK_EVENT_B64" not in job_env
+    assert "Execute guarded canary-spec queue operation on 49" in source
+    assert "Import guarded production canary channel asset on 49" in source
+    assert "Ingest guarded production canary callback transcript on 49" in source
     assert "Execute guarded non-spec queue operation on 49" in source
     assert "cancel-in-progress: false" in source
 
@@ -59,6 +67,8 @@ def test_remote_queue_operation_has_server_lock_release_attestation_and_no_direc
         "cutover_queue_runtime_generation.py",
         "run_test_loopback_canary.py",
         "configure_wecom_canary.py",
+        "import_wecom_canary_channel_asset.py",
+        "ingest_wecom_canary_callback.py",
         "transition_queue_runtime_scope.py",
         "plan_wecom_canary.py",
         "authorize_wecom_canary_execution.py",

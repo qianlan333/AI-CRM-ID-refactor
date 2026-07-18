@@ -18,6 +18,7 @@ def _spec() -> dict[str, tuple[str, ...]]:
             "wecom.message.group.send",
             "wecom.external_contact.detail.fetch",
             "wecom.media.upload",
+            "wecom.profile.update",
         ),
     }
 
@@ -56,7 +57,7 @@ def test_plan_only_redacts_targets_and_never_plans_jobs(tmp_path, capsys) -> Non
 
     output = capsys.readouterr().out
     assert '"applied": false' in output
-    assert '"scenario_count": 4' in output
+    assert '"scenario_count": 5' in output
     assert '"target_values_redacted": true' in output
     for values in _spec().values():
         for value in values:
@@ -92,10 +93,14 @@ def test_canary_requests_require_post_plan_authorization_and_pass_exact_target_g
         scenarios=plan_wecom_canary.SCENARIOS,
     )
 
-    assert len(requests) == 4
+    assert len(requests) == 5
     assert {request["scenario"] for request in requests} == set(plan_wecom_canary.SCENARIOS)
     assert all("execution_scope" not in request["payload"] for request in requests)
     assert all("canary_authorization" not in request["payload_summary"] for request in requests)
     assert all(request["max_attempts"] == 1 for request in requests)
     group = next(request for request in requests if request["scenario"] == "group")
     assert group["payload"]["mention_all"] is False
+    profile = next(request for request in requests if request["scenario"] == "profile")
+    assert profile["effect_type"] == "wecom.profile.update"
+    assert profile["payload"]["follow_user_userid"] == "owner_canary"
+    assert profile["payload_summary"]["disposable_relationship_only"] is True
