@@ -19,9 +19,10 @@ def test_repository_external_actions_are_immutable_and_trusted() -> None:
 
     assert errors == []
     # The ID-validation repository owns CI, full regression, isolated duration
-    # baseline refresh, the single 49.232.57.128 deployment workflow, and one
-    # guarded 49-only queue-operation workflow. Production promotion remains absent.
-    assert workflow_count == 5
+    # baseline refresh, weekly test-governance observability, the single
+    # 49.232.57.128 deployment workflow, and one guarded 49-only queue-operation
+    # workflow. Production promotion remains absent.
+    assert workflow_count == 6
     assert external_use_count > 0
 
 
@@ -40,6 +41,4 @@ def test_unapproved_action_sha_is_rejected(tmp_path: Path) -> None:
     errors, _, _ = check_workflows(tmp_path)
 
     trusted_sha, trusted_version = TRUSTED_ACTIONS["actions/checkout"]
-    assert errors == [
-        f".github/workflows/ci.yml:4: unapproved SHA for actions/checkout: {bad_sha}; expected {trusted_sha} ({trusted_version})"
-    ]
+    assert errors == [f".github/workflows/ci.yml:4: unapproved SHA for actions/checkout: {bad_sha}; expected {trusted_sha} ({trusted_version})"]
