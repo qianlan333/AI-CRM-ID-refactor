@@ -41,6 +41,7 @@ class ExternalEffectCanaryAuthorizationRepositoryMixin:
                     last_error_code = CASE WHEN status = 'blocked' THEN '' ELSE last_error_code END,
                     last_error_message = CASE WHEN status = 'blocked' THEN '' ELSE last_error_message END,
                     completed_at = CASE WHEN status = 'blocked' THEN NULL ELSE completed_at END,
+                    available_at = CURRENT_TIMESTAMP,
                     row_version = row_version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = :job_id

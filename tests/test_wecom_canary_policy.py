@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -14,6 +15,9 @@ from aicrm_next.platform_foundation.external_effects.models import (
 from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
 from aicrm_next.platform_foundation.external_effects.repo_memory import InMemoryExternalEffectRepository
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.platform_foundation.execution_runtime.listener import (
+    PostgresQueueWakeListener,
+)
 from aicrm_next.shared.db_session import get_session_factory
 
 
@@ -279,7 +283,7 @@ def test_wecom_canary_authorization_is_versioned_and_only_before_provider_bounda
     repository = InMemoryExternalEffectRepository()
     service = ExternalEffectService(repository)
 
-    def plan(key: str) -> dict:
+    def plan(key: str, *, available_at: datetime | None = None) -> dict:
         return service.plan_effect(
             effect_type=WECOM_MESSAGE_PRIVATE_SEND,
             adapter_name="wecom_private_message",
@@ -293,9 +297,13 @@ def test_wecom_canary_authorization_is_versioned_and_only_before_provider_bounda
                 "content_text": "canary",
             },
             idempotency_key=key,
+            available_at=available_at,
         )
 
-    first = plan("canary-authorize-safe")
+    first = plan(
+        "canary-authorize-safe",
+        available_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
     authorized = service.authorize_allowlisted_canary(
         first["id"],
         actor="pytest",
@@ -306,6 +314,8 @@ def test_wecom_canary_authorization_is_versioned_and_only_before_provider_bounda
     assert authorized is not None
     assert authorized.payload_json["execution_scope"] == "allowlisted_canary"
     assert authorized.payload_summary_json["canary_authorization"]["actor"] == "pytest"
+    assert authorized.available_at is not None
+    assert datetime.fromisoformat(authorized.available_at.replace("Z", "+00:00")) <= datetime.now(timezone.utc)
     assert authorized.payload_summary_json["canary_authorization"]["authorized_job_id"] == first["id"]
     assert (
         authorized.payload_summary_json["canary_authorization"]["authorized_from_version"]
@@ -339,6 +349,7 @@ def test_wecom_canary_authorization_is_versioned_and_only_before_provider_bounda
 
 
 @pytest.mark.skipif(not _database_url(), reason="PostgreSQL integration database is not configured")
+@pytest.mark.usefixtures("next_pg_schema")
 def test_postgres_wecom_canary_authorization_is_cas_and_audited(monkeypatch) -> None:
     _configure(
         monkeypatch,
@@ -362,16 +373,28 @@ def test_postgres_wecom_canary_authorization_is_cas_and_audited(monkeypatch) -> 
             "content_text": "canary",
         },
         idempotency_key=key,
+        available_at=datetime.now(timezone.utc) + timedelta(hours=1),
     )
 
-    authorized = service.authorize_allowlisted_canary(
-        planned["id"],
-        actor="pytest-postgres",
-        reason="explicit canary target confirmation",
-        expected_version=planned["row_version"],
-    )
+    listener = PostgresQueueWakeListener(_database_url())
+    listener.connect()
+    try:
+        authorized = service.authorize_allowlisted_canary(
+            planned["id"],
+            actor="pytest-postgres",
+            reason="explicit canary target confirmation",
+            expected_version=planned["row_version"],
+        )
+        wake_hint = listener.wait(timeout_seconds=1.0)
+    finally:
+        listener.close()
 
     assert authorized is not None
+    assert authorized.available_at is not None
+    assert datetime.fromisoformat(authorized.available_at.replace("Z", "+00:00")) <= datetime.now(timezone.utc)
+    assert wake_hint is not None
+    assert wake_hint.queue_kind == "external_effect"
+    assert wake_hint.lane == "wecom_interactive"
     assert authorized.payload_json["execution_scope"] == "allowlisted_canary"
     assert authorized.payload_summary_json["canary_authorization"]["actor"] == "pytest-postgres"
     assert authorized.payload_summary_json["canary_authorization"]["authorized_job_id"] == planned["id"]

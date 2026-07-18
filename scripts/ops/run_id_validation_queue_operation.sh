@@ -64,7 +64,7 @@ if ! printf '%s' "$queue_job_id" | grep -Eq '^[0-9]+$' || \
 fi
 case "$queue_operation" in
   activate_test_loopback|verify_owner_state|run_test_loopback|configure_allowlisted|\
-  import_canary_channel|ingest_canary_callback|transition_allowlisted|run_wecom_canary|\
+  import_canary_channel|ingest_canary_callback|arm_canary_callback|transition_allowlisted|run_wecom_canary|\
   authorize_execution|attest_execution|fault_listener|\
   fault_worker|fault_database|rollback_test_loopback|soak_start|soak_status|\
   soak_complete|soak_invalidate)
@@ -324,6 +324,17 @@ case "$queue_operation" in
       "${common_identity[@]}" \
       --apply \
       --confirmation "INGEST_WECOM_CANARY_CALLBACK_${queue_generation}"
+    ;;
+  arm_canary_callback)
+    require_canary_spec
+    require_channel_asset
+    AICRM_WECOM_CALLBACK_CANARY_ARM_AUTHORIZED=1 python3 scripts/ops/arm_wecom_callback_canary.py \
+      --spec-file "$spec_file" \
+      --asset-file "$asset_file" \
+      "${common_identity[@]}" \
+      --timeout-seconds 900 \
+      --apply \
+      --confirmation "ARM_WECOM_CALLBACK_CANARY_${queue_generation}"
     ;;
   transition_allowlisted)
     test -n "$queue_target_policy_version" || fail "target policy version is required"

@@ -123,6 +123,7 @@ def _processing_summary(result: dict[str, Any]) -> dict[str, Any]:
     for effect_result in baseline_effects.values():
         if isinstance(effect_result, dict):
             effect_jobs.append(effect_result.get("external_effect_job_id"))
+    effect_jobs.append(identity_sync.get("external_effect_job_id"))
     return {
         "handled": bool(result.get("handled")),
         "event_log_id": int(event_log.get("id") or 0),

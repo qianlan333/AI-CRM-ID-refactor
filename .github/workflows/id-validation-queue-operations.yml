@@ -14,6 +14,7 @@ on:
           - configure_allowlisted
           - import_canary_channel
           - ingest_canary_callback
+          - arm_canary_callback
           - transition_allowlisted
           - run_wecom_canary
           - authorize_execution
@@ -165,7 +166,7 @@ jobs:
           PY
 
       - name: Execute guarded non-spec queue operation on 49
-        if: inputs.operation != 'configure_allowlisted' && inputs.operation != 'run_wecom_canary' && inputs.operation != 'import_canary_channel' && inputs.operation != 'ingest_canary_callback'
+        if: inputs.operation != 'configure_allowlisted' && inputs.operation != 'run_wecom_canary' && inputs.operation != 'import_canary_channel' && inputs.operation != 'ingest_canary_callback' && inputs.operation != 'arm_canary_callback'
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
@@ -219,6 +220,21 @@ jobs:
           fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
           command_timeout: 20m
           envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,PUBLIC_BASE_URL,PUBLIC_HEALTH_URL,EXPECTED_RELEASE_SHA,QUEUE_OPERATION,QUEUE_EXPECTED_GENERATION,QUEUE_GENERATION,QUEUE_POLICY_VERSION,QUEUE_TARGET_POLICY_VERSION,QUEUE_RUN_ID,QUEUE_EXECUTION_ID,QUEUE_JOB_ID,QUEUE_EXPECTED_VERSION,QUEUE_EVIDENCE_TYPE,QUEUE_CANARY_SCENARIOS,OPERATOR_ACTOR,OPERATION_RUN_ID,OPERATION_RUN_ATTEMPT,WECOM_CANARY_SPEC_B64,WECOM_CHANNEL_ASSET_B64,WECOM_CALLBACK_EVENT_B64
+          script_path: scripts/ops/run_id_validation_queue_operation.sh
+
+      - name: Arm guarded real-time callback canary on 49
+        if: inputs.operation == 'arm_canary_callback'
+        env:
+          WECOM_CANARY_SPEC_B64: ${{ secrets.ID_VALIDATION_WECOM_CANARY_SPEC_B64 }}
+          WECOM_CHANNEL_ASSET_B64: ${{ secrets.ID_VALIDATION_WECOM_CHANNEL_ASSET_B64 }}
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+          username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
+          key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
+          command_timeout: 25m
+          envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,PUBLIC_BASE_URL,PUBLIC_HEALTH_URL,EXPECTED_RELEASE_SHA,QUEUE_OPERATION,QUEUE_EXPECTED_GENERATION,QUEUE_GENERATION,QUEUE_POLICY_VERSION,QUEUE_TARGET_POLICY_VERSION,QUEUE_RUN_ID,QUEUE_EXECUTION_ID,QUEUE_JOB_ID,QUEUE_EXPECTED_VERSION,QUEUE_EVIDENCE_TYPE,QUEUE_CANARY_SCENARIOS,OPERATOR_ACTOR,OPERATION_RUN_ID,OPERATION_RUN_ATTEMPT,WECOM_CANARY_SPEC_B64,WECOM_CHANNEL_ASSET_B64
           script_path: scripts/ops/run_id_validation_queue_operation.sh
 
       - name: Record operation provenance
