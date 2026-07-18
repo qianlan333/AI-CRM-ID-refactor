@@ -116,6 +116,19 @@ class ExternalEffectCreateRequest:
     fairness_key: str = ""
     rate_scope_key: str = ""
 
+    def __post_init__(self) -> None:
+        """Strip CAS-owned canary fields from every ordinary enqueue path."""
+
+        if not str(self.effect_type or "").strip().startswith("wecom."):
+            return
+        payload = dict(self.payload or {})
+        summary = dict(self.payload_summary or {})
+        if str(payload.get("execution_scope") or "").strip() == "allowlisted_canary":
+            payload.pop("execution_scope", None)
+        summary.pop("canary_authorization", None)
+        object.__setattr__(self, "payload", payload)
+        object.__setattr__(self, "payload_summary", summary)
+
 
 @dataclass(frozen=True)
 class ExternalEffectJob:

@@ -25,6 +25,7 @@ from .models import (
     utcnow,
 )
 from .completion_events import build_external_effect_completed_event
+from .canary_repository import ExternalEffectCanaryAuthorizationRepositoryMixin
 from .provider_result_repository import ExternalEffectProviderResultRepositoryMixin, encode_provider_result
 from .rate_limit import persist_rate_limit_cooldown
 from .repo_contract import (
@@ -43,7 +44,7 @@ from .repo_contract import (
     _text,
 )
 
-class SQLAlchemyExternalEffectRepository(ExternalEffectProviderResultRepositoryMixin, ExternalEffectRepository):
+class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationRepositoryMixin, ExternalEffectProviderResultRepositoryMixin, ExternalEffectRepository):
     def __init__(self, session_factory: Callable[[], Session] | None = None):
         self._session_factory = session_factory or get_session_factory()
     def _one(self, statement: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -145,7 +146,6 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectProviderResultRepositoryM
         return job
     def get_job(self, job_id: int) -> ExternalEffectJob | None:
         return _public_job(self._one("SELECT * FROM external_effect_job WHERE id = :job_id LIMIT 1", {"job_id": int(job_id)}))
-
     def list_jobs(self, filters: dict[str, Any] | None = None, *, limit: int = 50, offset: int = 0) -> tuple[list[ExternalEffectJob], int]:
         filters = dict(filters or {})
         clauses: list[str] = []

@@ -155,6 +155,7 @@ def create_loopback_job(
     service: ExternalEffectService,
     scenario: str,
     response_status: int | None = None,
+    max_attempts: int = 5,
 ) -> dict[str, Any]:
     scenario_config = SCENARIOS.get(str(scenario or "").strip())
     if not scenario_config:
@@ -218,6 +219,7 @@ def create_loopback_job(
         risk_level="low",
         execution_mode="execute",
         status="queued",
+        max_attempts=max(1, int(max_attempts or 1)),
         idempotency_key=idempotency_key,
     )
     return {

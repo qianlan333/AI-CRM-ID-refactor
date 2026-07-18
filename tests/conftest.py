@@ -332,6 +332,42 @@ _truncate_state: dict[str, Any] = {
     "conn": None,  # session-cached autocommit psycopg conn
 }
 
+_QUEUE_RUNTIME_RESET_SQL = """
+WITH reset_control AS (
+    UPDATE queue_runtime_control
+    SET active_generation = 0,
+        claim_enabled = FALSE,
+        rollout_mode = 'standby',
+        global_max_in_flight = 20,
+        policy_version = 'queue-v2-test-loopback',
+        external_claim_scope = 'test_loopback',
+        updated_by = 'pytest-fixture',
+        updated_reason = 'reset mutable queue control between tests',
+        updated_at = CURRENT_TIMESTAMP
+    WHERE singleton = TRUE
+    RETURNING singleton
+)
+UPDATE queue_lane_policy
+SET max_in_flight = CASE lane
+        WHEN 'internal_general' THEN 4
+        WHEN 'internal_financial' THEN 1
+        WHEN 'webhook_inbox' THEN 4
+        WHEN 'wecom_interactive' THEN 4
+        WHEN 'wecom_bulk' THEN 1
+        WHEN 'wecom_media' THEN 2
+        WHEN 'outbound_webhook' THEN 4
+        ELSE max_in_flight
+    END,
+    enabled = TRUE,
+    rollout_mode = CASE WHEN lane = 'outbound_webhook' THEN 'blocked' ELSE 'standby' END,
+    blocked_until = NULL,
+    policy_version = 'queue-v2-test-loopback',
+    updated_by = 'pytest-fixture',
+    updated_reason = 'reset mutable queue lane policy between tests',
+    updated_at = CURRENT_TIMESTAMP
+WHERE EXISTS (SELECT 1 FROM reset_control)
+"""
+
 
 def _close_truncate_conn() -> None:
     conn = _truncate_state.pop("conn", None)
@@ -478,6 +514,7 @@ def _truncate_before_each_test():
     cur = conn.cursor()
     try:
         cur.execute(sql)
+        cur.execute(_QUEUE_RUNTIME_RESET_SQL)
     except Exception:
         # 断连 / 死锁 / 上个 test 遗留 idle transaction：弃旧连接，清 blocker 后重试。
         try:
@@ -491,6 +528,7 @@ def _truncate_before_each_test():
         try:
             retry_cur.execute("SET lock_timeout = '5s'")
             retry_cur.execute(sql)
+            retry_cur.execute(_QUEUE_RUNTIME_RESET_SQL)
             _truncate_state["conn"] = retry_conn
         except Exception:
             try:

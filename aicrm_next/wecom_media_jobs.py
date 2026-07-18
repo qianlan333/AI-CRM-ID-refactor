@@ -12,6 +12,7 @@ from aicrm_next.platform_foundation.external_effects import (
 )
 from aicrm_next.platform_foundation.external_effects.repo import build_external_effect_repository
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.platform_foundation.external_effects.wecom_canary_policy import wecom_canary_job_gate_error
 from aicrm_next.shared.runtime import production_data_ready, production_environment
 
 
@@ -47,6 +48,30 @@ class WeComMediaUploadAdapter:
                 response_summary={"real_external_call_executed": False, "wecom_media_upload_executed": False},
                 error_code="unsupported_effect_type",
                 error_message="WeCom media upload adapter received an unsupported effect type.",
+                real_external_call_executed=False,
+            )
+        expected_target = (
+            f"{request_summary['material_kind']}:{request_summary['material_id']}:{request_summary['upload_kind']}"
+        )
+        if job.target_type != "media_library_material" or str(job.target_id or "").strip() != expected_target:
+            gate_error = "target_mismatch"
+        elif job.execution_mode in {"disabled", "shadow", "plan_only", "execute_dryrun"}:
+            gate_error = "shadow_only"
+        else:
+            gate_error = wecom_canary_job_gate_error(job)
+        if gate_error:
+            return ExternalEffectDispatchResult(
+                status="failed_terminal",
+                adapter_mode=job.execution_mode or "execute",
+                request_summary=request_summary,
+                response_summary={
+                    "blocked": True,
+                    "execution_gate": gate_error,
+                    "real_external_call_executed": False,
+                    "wecom_media_upload_executed": False,
+                },
+                error_code=gate_error,
+                error_message="WeCom media upload is blocked before provider dispatch.",
                 real_external_call_executed=False,
             )
         try:

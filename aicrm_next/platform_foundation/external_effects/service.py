@@ -11,6 +11,7 @@ from .execution_gates import (
     is_wecom_effect_type,
     wecom_execution_disabled_message,
 )
+from .wecom_canary_policy import wecom_canary_job_gate_error
 from .models import ExternalEffectCreateRequest, ExternalEffectJob
 from .repo import ExternalEffectRepository, build_external_effect_repository
 
@@ -172,6 +173,30 @@ class ExternalEffectService:
         if blocked is not None:
             return blocked
         return self._repo.approve_job(job_id)
+
+    def authorize_allowlisted_canary(
+        self,
+        job_id: int,
+        *,
+        actor: str,
+        reason: str,
+        expected_version: int,
+    ) -> ExternalEffectJob | None:
+        normalized_actor = str(actor or "").strip()
+        normalized_reason = str(reason or "").strip()
+        if not normalized_actor or not normalized_reason or int(expected_version or 0) < 1:
+            return None
+        job = self._repo.get_job(job_id)
+        if job is None or not is_wecom_effect_type(job.effect_type):
+            return None
+        if wecom_canary_job_gate_error(job, authorize_scope=True):
+            return None
+        return self._repo.authorize_allowlisted_canary(
+            job_id,
+            actor=normalized_actor,
+            reason=normalized_reason,
+            expected_version=int(expected_version),
+        )
 
     def retry(
         self,

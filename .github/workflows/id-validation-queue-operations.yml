@@ -1,0 +1,196 @@
+name: ID Validation Queue Operations
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: One guarded queue-runtime operation on 49 only
+        required: true
+        type: choice
+        options:
+          - activate_test_loopback
+          - verify_owner_state
+          - run_test_loopback
+          - configure_allowlisted
+          - transition_allowlisted
+          - run_wecom_canary
+          - authorize_execution
+          - attest_execution
+          - fault_listener
+          - fault_worker
+          - fault_database
+          - rollback_test_loopback
+          - soak_start
+          - soak_status
+          - soak_complete
+          - soak_invalidate
+      expected_release_sha:
+        description: Exact deployed ID-refactor full SHA
+        required: true
+        type: string
+      expected_generation:
+        description: Source generation; used only for initial activation
+        required: true
+        default: "0"
+        type: string
+      generation:
+        description: Active or target runtime generation
+        required: true
+        default: "1"
+        type: string
+      policy_version:
+        description: Exact currently active policy version
+        required: true
+        default: queue-v2-test-loopback
+        type: string
+      target_policy_version:
+        description: Optional immutable target policy for scope transition
+        required: false
+        default: ""
+        type: string
+      run_id:
+        description: Optional safe canary run identifier
+        required: false
+        default: ""
+        type: string
+      execution_id:
+        description: Required only when attesting an existing execution
+        required: false
+        default: ""
+        type: string
+      job_id:
+        description: Optional exact job id for a multi-job execution
+        required: false
+        default: "0"
+        type: string
+      expected_version:
+        description: Required row_version for authorize_execution CAS
+        required: false
+        default: "0"
+        type: string
+      evidence_type:
+        description: Required only for attestation
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aicrm-id-validation-deploy
+  cancel-in-progress: false
+
+jobs:
+  operate:
+    if: github.repository == 'qianlan333/AI-CRM-ID-refactor'
+    environment: id-validation
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_REPOSITORY: qianlan333/AI-CRM-ID-refactor
+      EXPECTED_DEPLOY_HOST: 49.232.57.128
+      EXPECTED_SSH_HOST_FINGERPRINT: SHA256:NXSJUveGoNy1lDsa+eOKho1h0ythB+pKTyijv8/KfU0
+      DEPLOY_TARGET: id-validation
+      PUBLIC_BASE_URL: https://id-dev.youcangogogo.com
+      PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health
+      EXPECTED_RELEASE_SHA: ${{ inputs.expected_release_sha }}
+      QUEUE_OPERATION: ${{ inputs.operation }}
+      QUEUE_EXPECTED_GENERATION: ${{ inputs.expected_generation }}
+      QUEUE_GENERATION: ${{ inputs.generation }}
+      QUEUE_POLICY_VERSION: ${{ inputs.policy_version }}
+      QUEUE_TARGET_POLICY_VERSION: ${{ inputs.target_policy_version }}
+      QUEUE_RUN_ID: ${{ inputs.run_id }}
+      QUEUE_EXECUTION_ID: ${{ inputs.execution_id }}
+      QUEUE_JOB_ID: ${{ inputs.job_id }}
+      QUEUE_EXPECTED_VERSION: ${{ inputs.expected_version }}
+      QUEUE_EVIDENCE_TYPE: ${{ inputs.evidence_type }}
+      OPERATOR_ACTOR: ${{ github.actor }}
+      OPERATION_RUN_ID: ${{ github.run_id }}
+      OPERATION_RUN_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: Assert immutable ID-validation operation target
+        env:
+          DEPLOY_HOST: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+        run: |
+          set -e
+          set -o pipefail
+          test "$GITHUB_REPOSITORY" = "$EXPECTED_REPOSITORY"
+          test "$DEPLOY_HOST" = "$EXPECTED_DEPLOY_HOST"
+          test "$DEPLOY_TARGET" = "id-validation"
+          test "$PUBLIC_BASE_URL" = "https://id-dev.youcangogogo.com"
+          test "$PUBLIC_HEALTH_URL" = "https://id-dev.youcangogogo.com/health"
+          printf '%s' "$EXPECTED_RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$QUEUE_EXPECTED_GENERATION" | grep -Eq '^[0-9]+$'
+          printf '%s' "$QUEUE_GENERATION" | grep -Eq '^[1-9][0-9]*$'
+          printf '%s' "$QUEUE_POLICY_VERSION" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$'
+
+      - name: Checkout exact deployed release
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0 (Node 24)
+        with:
+          ref: ${{ inputs.expected_release_sha }}
+          fetch-depth: 0
+
+      - name: Verify release is current main and public ID release
+        run: |
+          set -e
+          set -o pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+          git fetch --no-tags origin main
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_RELEASE_SHA"
+          rm -f /tmp/aicrm-id-operation.headers
+          curl --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 -fsS \
+            -D /tmp/aicrm-id-operation.headers \
+            -o /dev/null \
+            "$PUBLIC_HEALTH_URL"
+          python3 - /tmp/aicrm-id-operation.headers "$EXPECTED_RELEASE_SHA" <<'PY'
+          import sys
+          from pathlib import Path
+
+          headers = Path(sys.argv[1]).read_text(encoding="iso-8859-1")
+          values = []
+          for line in headers.replace("\r\n", "\n").splitlines():
+              name, separator, value = line.partition(":")
+              if separator and name.lower() == "x-aicrm-release-sha":
+                  values.append(value.strip())
+          if values != [sys.argv[2]]:
+              raise SystemExit("public ID health release SHA mismatch")
+          PY
+
+      - name: Execute guarded non-spec queue operation on 49
+        if: inputs.operation != 'configure_allowlisted' && inputs.operation != 'run_wecom_canary'
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+          username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
+          key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
+          command_timeout: 20m
+          envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,PUBLIC_BASE_URL,PUBLIC_HEALTH_URL,EXPECTED_RELEASE_SHA,QUEUE_OPERATION,QUEUE_EXPECTED_GENERATION,QUEUE_GENERATION,QUEUE_POLICY_VERSION,QUEUE_TARGET_POLICY_VERSION,QUEUE_RUN_ID,QUEUE_EXECUTION_ID,QUEUE_JOB_ID,QUEUE_EXPECTED_VERSION,QUEUE_EVIDENCE_TYPE,OPERATOR_ACTOR,OPERATION_RUN_ID,OPERATION_RUN_ATTEMPT
+          script_path: scripts/ops/run_id_validation_queue_operation.sh
+
+      - name: Execute guarded private-spec queue operation on 49
+        if: inputs.operation == 'configure_allowlisted' || inputs.operation == 'run_wecom_canary'
+        env:
+          WECOM_CANARY_SPEC_B64: ${{ secrets.ID_VALIDATION_WECOM_CANARY_SPEC_B64 }}
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+          username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
+          key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
+          command_timeout: 20m
+          envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,PUBLIC_BASE_URL,PUBLIC_HEALTH_URL,EXPECTED_RELEASE_SHA,QUEUE_OPERATION,QUEUE_EXPECTED_GENERATION,QUEUE_GENERATION,QUEUE_POLICY_VERSION,QUEUE_TARGET_POLICY_VERSION,QUEUE_RUN_ID,QUEUE_EXECUTION_ID,QUEUE_JOB_ID,QUEUE_EXPECTED_VERSION,QUEUE_EVIDENCE_TYPE,OPERATOR_ACTOR,OPERATION_RUN_ID,OPERATION_RUN_ATTEMPT,WECOM_CANARY_SPEC_B64
+          script_path: scripts/ops/run_id_validation_queue_operation.sh
+
+      - name: Record operation provenance
+        run: |
+          {
+            echo "## ID-validation queue operation"
+            echo ""
+            echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Release SHA: $EXPECTED_RELEASE_SHA"
+            echo "- Operation: $QUEUE_OPERATION"
+            echo "- Generation: $QUEUE_GENERATION"
+            echo "- GitHub actor: $OPERATOR_ACTOR"
+            echo "- Target: id-validation / 49.232.57.128"
+          } >> "$GITHUB_STEP_SUMMARY"

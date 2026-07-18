@@ -1,0 +1,294 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from aicrm_next.platform_foundation.execution_runtime.validation import (
+    CANARY_CONFIG_KEYS,
+    REQUIRED_VALIDATION_EVIDENCE,
+    configuration_hash,
+    evaluate_soak_snapshot,
+    evidence_type_for_effect,
+    record_external_effect_evidence,
+)
+from aicrm_next.platform_foundation.external_effects.models import (
+    ExternalEffectAttempt,
+    ExternalEffectJob,
+)
+from scripts.ops import manage_queue_runtime_soak
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class _EvidenceConnection:
+    def __init__(self) -> None:
+        self.parameters = ()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args) -> None:
+        return None
+
+    def execute(self, _query, parameters):
+        self.parameters = parameters
+        return self
+
+    def commit(self) -> None:
+        return None
+
+
+def _healthy_metrics() -> dict:
+    return {
+        "fresh_listener_count": 9,
+        "lost_lease_count": 0,
+        "duplicate_provider_call_count": 0,
+        "unexpected_real_target_count": 0,
+        "worker_release_mismatch_count": 0,
+        "queue_unknown_count": 3,
+        "queue_dlq_count": 5,
+        "external_effect_eligible_oldest_pending_age_seconds": 0,
+        "internal_event_actionable_oldest_pending_age_seconds": 0,
+        "webhook_eligible_oldest_pending_age_seconds": 0,
+    }
+
+
+def test_configuration_hash_is_stable_and_sensitive_to_every_tracked_value() -> None:
+    first = {key: "value" for key in CANARY_CONFIG_KEYS}
+    second = dict(first)
+    second[CANARY_CONFIG_KEYS[-1]] = "changed"
+
+    assert len(configuration_hash(first)) == 64
+    assert configuration_hash(first) == configuration_hash(dict(reversed(list(first.items()))))
+    assert configuration_hash(first) != configuration_hash(second)
+
+
+def test_soak_snapshot_requires_exact_context_and_zero_correctness_regressions() -> None:
+    baseline = _healthy_metrics()
+    assert (
+        evaluate_soak_snapshot(
+            _healthy_metrics(),
+            baseline,
+            release_matches=True,
+            configuration_matches=True,
+            migration_matches=True,
+        )
+        == []
+    )
+
+    failed = _healthy_metrics()
+    failed.update(
+        {
+            "fresh_listener_count": 8,
+            "duplicate_provider_call_count": 1,
+            "queue_unknown_count": 4,
+            "external_effect_eligible_oldest_pending_age_seconds": 4,
+        }
+    )
+    violations = evaluate_soak_snapshot(
+        failed,
+        baseline,
+        release_matches=False,
+        configuration_matches=False,
+        migration_matches=False,
+    )
+
+    assert set(violations) == {
+        "release_sha_changed",
+        "canary_configuration_changed",
+        "migration_revision_changed",
+        "duplicate_provider_call_count",
+        "fresh_listener_count_below_nine",
+        "unknown_count_increased",
+        "eligible_backlog_exceeded_three_seconds",
+    }
+
+
+def test_72_hour_soak_snapshot_coverage_rounds_up_to_at_least_ninety_five_percent() -> None:
+    assert manage_queue_runtime_soak._required_snapshot_count(72 * 60 * 60) == 274
+    assert manage_queue_runtime_soak._required_snapshot_count(1) == 1
+
+
+def test_validation_evidence_covers_each_real_canary_and_fault_drill() -> None:
+    mapped = {
+        evidence_type_for_effect("wecom.message.private.send"),
+        evidence_type_for_effect("wecom.message.group.send"),
+        evidence_type_for_effect("wecom.welcome_message.send"),
+        evidence_type_for_effect("wecom.contact.tag.mark"),
+        evidence_type_for_effect("wecom.profile.update"),
+        evidence_type_for_effect("wecom.external_contact.detail.fetch"),
+        evidence_type_for_effect("wecom.media.upload"),
+    }
+
+    assert mapped.issubset(REQUIRED_VALIDATION_EVIDENCE)
+    assert {
+        "test_loopback",
+        "listener_reconnect",
+        "worker_restart",
+        "database_reconnect",
+    }.issubset(REQUIRED_VALIDATION_EVIDENCE)
+
+
+def test_external_effect_evidence_requires_exact_policy_generation_and_provider_attempt(
+    monkeypatch,
+) -> None:
+    connection = _EvidenceConnection()
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.normalize_runtime_database_url",
+        lambda value: value,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.open_runtime_connection",
+        lambda _value: connection,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.wecom_canary_job_gate_error",
+        lambda _job: "",
+    )
+    job = ExternalEffectJob(
+        id=91,
+        effect_type="wecom.message.private.send",
+        execution_id="exe_canary",
+        payload_json={"execution_scope": "allowlisted_canary"},
+        status="succeeded",
+        policy_version="queue-v2-allowlisted",
+        worker_generation=17,
+        provider_call_started_at="2026-07-17T00:00:00Z",
+        side_effect_executed=True,
+        provider_result_received=True,
+        attempt_count=1,
+    )
+    attempts = [
+        ExternalEffectAttempt(
+            job_id=91,
+            provider_call_started_at="2026-07-17T00:00:00Z",
+            worker_generation=17,
+            status="succeeded",
+        )
+    ]
+
+    passed = record_external_effect_evidence(
+        "postgresql://runtime",
+        job=job,
+        attempts=attempts,
+        release_sha="a" * 40,
+        generation=17,
+        policy_version="queue-v2-allowlisted",
+        actor="pytest",
+        reason="provider proof",
+    )
+    wrong_policy = record_external_effect_evidence(
+        "postgresql://runtime",
+        job=job,
+        attempts=attempts,
+        release_sha="a" * 40,
+        generation=17,
+        policy_version="queue-v2-other",
+        actor="pytest",
+        reason="provider proof",
+    )
+
+    assert passed["status"] == "passed"
+    assert passed["provider_attempt_count"] == 1
+    assert passed["provider_policy_gate_passed"] is True
+    assert wrong_policy["status"] == "failed"
+    assert wrong_policy["policy_proof_valid"] is False
+
+
+def test_loopback_evidence_requires_exact_signed_receipt_and_policy(
+    monkeypatch,
+) -> None:
+    connection = _EvidenceConnection()
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.normalize_runtime_database_url",
+        lambda value: value,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.open_runtime_connection",
+        lambda _value: connection,
+    )
+    job = ExternalEffectJob(
+        id=92,
+        effect_type="questionnaire.submission.webhook.push",
+        execution_id="exe_loopback",
+        payload_json={"execution_scope": "test_loopback"},
+        status="succeeded",
+        policy_version="queue-v2-test-loopback",
+        worker_generation=17,
+        provider_call_started_at="2026-07-17T00:00:00Z",
+        side_effect_executed=True,
+        provider_result_received=True,
+        attempt_count=1,
+    )
+    attempts = [
+        ExternalEffectAttempt(
+            job_id=92,
+            provider_call_started_at="2026-07-17T00:00:00Z",
+            worker_generation=17,
+            status="succeeded",
+        )
+    ]
+    receipt_proof = {
+        "test_receipt_count": 1,
+        "test_receipt_signature_valid": True,
+        "test_receipt_payload_hash_matches": True,
+        "test_receipt_response_2xx": True,
+    }
+
+    missing_receipt = record_external_effect_evidence(
+        "postgresql://runtime",
+        job=job,
+        attempts=attempts,
+        release_sha="a" * 40,
+        generation=17,
+        policy_version="queue-v2-test-loopback",
+        actor="pytest",
+        reason="loopback proof",
+        evidence_type="test_loopback",
+    )
+    exact_policy = record_external_effect_evidence(
+        "postgresql://runtime",
+        job=job,
+        attempts=attempts,
+        release_sha="a" * 40,
+        generation=17,
+        policy_version="queue-v2-test-loopback",
+        actor="pytest",
+        reason="exact loopback proof",
+        evidence_type="test_loopback",
+        extra_evidence=receipt_proof,
+    )
+    wrong_policy = record_external_effect_evidence(
+        "postgresql://runtime",
+        job=job,
+        attempts=attempts,
+        release_sha="a" * 40,
+        generation=17,
+        policy_version="queue-v2-allowlisted",
+        actor="pytest",
+        reason="wrong policy loopback proof",
+        evidence_type="test_loopback",
+        extra_evidence=receipt_proof,
+    )
+
+    assert missing_receipt["status"] == "failed"
+    assert missing_receipt["test_receipt_proof_valid"] is False
+    assert exact_policy["status"] == "passed"
+    assert exact_policy["policy_proof_valid"] is True
+    assert wrong_policy["status"] == "failed"
+    assert wrong_policy["policy_proof_valid"] is False
+
+
+def test_soak_snapshot_timer_is_a_non_executor_fifteen_minute_evidence_writer() -> None:
+    manifest = json.loads((ROOT / "deploy" / "production_runtime_units.json").read_text())
+    active = {item["timer"]: item["service"] for item in manifest["active_autostart"]}
+    timer = (ROOT / "deploy" / "aicrm-queue-soak-snapshot.timer").read_text()
+    service = (ROOT / "deploy" / "aicrm-queue-soak-snapshot.service").read_text()
+
+    assert active["aicrm-queue-soak-snapshot.timer"] == "aicrm-queue-soak-snapshot.service"
+    assert "OnCalendar=*:0/15" in timer
+    assert "Persistent=true" in timer
+    assert "manage_queue_runtime_soak.py --action snapshot" in service
+    for forbidden in ("run_execution_runtime.py", "dispatch_one", "run_due", "--execute"):
+        assert forbidden not in service

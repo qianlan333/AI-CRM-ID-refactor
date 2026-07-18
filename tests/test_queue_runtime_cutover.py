@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,8 +15,12 @@ from aicrm_next.platform_foundation.execution_runtime.cutover import (
     QueueRuntimeCutoverCoordinator,
     QueueRuntimeCutoverRequest,
 )
-from scripts.ci.check_queue_runtime_cutover_kernel import collect_errors
+from scripts.ci.check_queue_runtime_cutover_kernel import (
+    collect_canary_scope_producer_errors,
+    collect_errors,
+)
 from scripts.ops import cutover_queue_runtime_generation
+from scripts.ops import transition_queue_runtime_scope
 from scripts.ops import check_ai_audience_refresh_owner
 
 
@@ -293,8 +298,138 @@ def test_cutover_cli_rejects_manual_legacy_owner_subset() -> None:
         )
 
 
+def test_scope_transition_cli_is_plan_only_and_lists_fail_closed_sequence(capsys) -> None:
+    exit_code = transition_queue_runtime_scope.main(
+        [
+            "--generation",
+            "17",
+            "--expected-policy-version",
+            "queue-v2-allowlisted",
+            "--target-policy-version",
+            "queue-v2-test-loopback-rollback",
+            "--expected-scope",
+            "allowlisted",
+            "--target-scope",
+            "test_loopback",
+            "--actor",
+            "pytest",
+            "--reason",
+            "plan rollback only",
+        ]
+    )
+
+    assert exit_code == 0
+    output = capsys.readouterr().out
+    assert '"applied": false' in output
+    assert '"disable_claims"' in output
+    assert '"drain_all_lanes"' in output
+    assert '"resume_claims"' in output
+    assert '"real_external_call_executed": false' in output
+
+
+def test_scope_transition_cli_requires_exact_apply_authorization(monkeypatch) -> None:
+    monkeypatch.delenv("AICRM_QUEUE_SCOPE_TRANSITION_AUTHORIZED", raising=False)
+
+    with pytest.raises(RuntimeError, match="AICRM_QUEUE_SCOPE_TRANSITION_AUTHORIZED=1"):
+        transition_queue_runtime_scope.main(
+            [
+                "--generation",
+                "17",
+                "--expected-policy-version",
+                "queue-v2-allowlisted",
+                "--target-policy-version",
+                "queue-v2-test-loopback-rollback",
+                "--expected-scope",
+                "allowlisted",
+                "--target-scope",
+                "test_loopback",
+                "--actor",
+                "pytest",
+                "--reason",
+                "explicit rollback",
+                "--apply",
+                "--confirmation",
+                "TRANSITION_QUEUE_SCOPE_17_ALLOWLISTED_TO_TEST_LOOPBACK",
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    ("effect_type", "missing_count", "expected_reason"),
+    (
+        (
+            "wecom.external_contact.detail.fetch",
+            "external_userid",
+            "wecom_external_target_allowlist_empty",
+        ),
+        (
+            "wecom.message.private.send",
+            "owner_userid",
+            "wecom_owner_allowlist_empty",
+        ),
+        (
+            "wecom.message.group.send",
+            "group_chat_id",
+            "wecom_group_chat_allowlist_empty",
+        ),
+        (
+            "wecom.media.upload",
+            "media_target",
+            "wecom_media_target_allowlist_empty",
+        ),
+    ),
+)
+def test_allowlisted_scope_preflight_requires_allowlist_for_each_enabled_effect(
+    monkeypatch,
+    effect_type: str,
+    missing_count: str,
+    expected_reason: str,
+) -> None:
+    counts = {
+        "external_userid": 1,
+        "owner_userid": 1,
+        "group_webhook_key": 1,
+        "group_chat_id": 1,
+        "media_target": 1,
+    }
+    counts[missing_count] = 0
+    monkeypatch.setattr(
+        transition_queue_runtime_scope,
+        "wecom_canary_policy_snapshot",
+        lambda: {
+            "provider_target_policy": "allowlisted_canary",
+            "allowlist_counts": counts,
+            "blocking_reasons": [],
+        },
+    )
+    monkeypatch.setattr(
+        transition_queue_runtime_scope,
+        "load_wecom_execution_config",
+        lambda: SimpleNamespace(
+            execution_mode="execute",
+            real_calls_enabled=True,
+            enabled_effect_types=(effect_type,),
+        ),
+    )
+
+    result = transition_queue_runtime_scope._policy_preflight("allowlisted")
+
+    assert result["ready"] is False
+    assert expected_reason in result["blocking_reasons"]
+
+
 def test_queue_cutover_ownership_checker_passes() -> None:
     assert collect_errors() == []
+
+
+def test_queue_cutover_checker_rejects_canary_scope_in_ordinary_producer(tmp_path) -> None:
+    producer = tmp_path / "aicrm_next" / "cloud_orchestrator" / "producer.py"
+    producer.parent.mkdir(parents=True)
+    producer.write_text('payload["execution_scope"] = "allowlisted_canary"\n')
+
+    assert collect_canary_scope_producer_errors(tmp_path) == [
+        "aicrm_next/cloud_orchestrator/producer.py: ordinary producers must use the CAS canary authorization service"
+    ]
 
 
 def test_ai_audience_legacy_owner_guard_allows_only_closed_generation_zero(monkeypatch) -> None:

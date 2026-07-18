@@ -644,8 +644,20 @@ repositories:
       - internal_event_outbox
       - queue_fairness_cursor
       - queue_rate_scope_cooldown
+      - queue_runtime_lease_recovery_event
       - queue_worker_heartbeat
       - webhook_inbox
+  aicrm_next/platform_foundation/external_effects/canary_repository.py:
+    capability_owner: aicrm_next.platform_foundation.external_effects
+    table_reads: []
+    table_writes:
+      - external_effect_job
+  aicrm_next/platform_foundation/external_effects/provider_result_repository.py:
+    capability_owner: aicrm_next.platform_foundation.external_effects
+    table_reads:
+      - external_effect_attempt
+    table_writes:
+      - external_effect_attempt
   aicrm_next/platform_foundation/external_effects/repo.py:
     capability_owner: aicrm_next.platform_foundation.external_effects
     table_reads:
@@ -656,12 +668,6 @@ repositories:
       - external_effect_attempt
       - external_effect_job
       - external_effect_test_receipt
-  aicrm_next/platform_foundation/external_effects/provider_result_repository.py:
-    capability_owner: aicrm_next.platform_foundation.external_effects
-    table_reads:
-      - external_effect_attempt
-    table_writes:
-      - external_effect_attempt
   aicrm_next/platform_foundation/internal_events/repository.py:
     capability_owner: aicrm_next.platform_foundation.internal_events
     table_reads:

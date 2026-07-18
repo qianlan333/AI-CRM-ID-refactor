@@ -91,8 +91,14 @@ def test_execution_timeline_graph_indexes_are_the_single_head() -> None:
     sidebar_timeline_source = sidebar_timeline.read_text(encoding="utf-8")
     timeline_indexes = VERSIONS / "0134_execution_timeline_graph_indexes.py"
     timeline_indexes_source = timeline_indexes.read_text(encoding="utf-8")
+    scope_transition = VERSIONS / "0135_queue_scope_transition_audit.py"
+    scope_transition_source = scope_transition.read_text(encoding="utf-8")
+    validation_soak = VERSIONS / "0136_queue_runtime_validation_soak.py"
+    validation_soak_source = validation_soak.read_text(encoding="utf-8")
 
-    assert heads == {"0134_execution_timeline_graph_indexes"}
+    assert heads == {"0136_queue_runtime_validation_soak"}
+    assert revisions["0136_queue_runtime_validation_soak"]["down_revision"] == "0135_queue_scope_transition_audit"
+    assert revisions["0135_queue_scope_transition_audit"]["down_revision"] == "0134_execution_timeline_graph_indexes"
     assert revisions["0134_execution_timeline_graph_indexes"]["down_revision"] == "0133_sidebar_customer_timeline"
     assert revisions["0133_sidebar_customer_timeline"]["down_revision"] == "0132_external_claim_scope_policy"
     assert revisions["0132_external_claim_scope_policy"]["down_revision"] == "0131_external_effect_continuation_fanout"
@@ -113,6 +119,16 @@ def test_execution_timeline_graph_indexes_are_the_single_head() -> None:
     assert "CREATE TABLE IF NOT EXISTS automation_agent_output" in audit_source
     assert "CREATE TABLE IF NOT EXISTS automation_agent_llm_call_log" in audit_source
     assert "idx_automation_agent_output_run_created" in audit_source
+    assert "queue_runtime_scope_transition_audit" in scope_transition_source
+    assert "queue_runtime_canary_config_audit" in scope_transition_source
+    assert "aicrm_reject_queue_runtime_audit_mutation" in scope_transition_source
+    assert "queue_runtime_validation_evidence" in validation_soak_source
+    assert "queue_runtime_lease_recovery_event" in validation_soak_source
+    assert "queue_runtime_soak_run" in validation_soak_source
+    assert "queue_runtime_soak_snapshot" in validation_soak_source
+    assert "trg_queue_runtime_validation_evidence_append_only" in validation_soak_source
+    assert "trg_queue_runtime_lease_recovery_event_append_only" in validation_soak_source
+    assert "trg_queue_runtime_soak_snapshot_append_only" in validation_soak_source
     assert "ix_automation_agent_output_unionid" in audit_source
     assert "idx_automation_agent_llm_call_log_agent_created" in audit_source
     assert "FOREIGN KEY" not in audit_source

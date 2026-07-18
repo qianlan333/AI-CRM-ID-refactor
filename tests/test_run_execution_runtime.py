@@ -71,8 +71,9 @@ def test_execute_rejects_generation_zero_even_with_environment_gate(monkeypatch)
         )
 
 
-def test_external_execute_is_test_only_until_canary_review(monkeypatch) -> None:
+def test_external_execute_requires_test_only_or_reviewed_canary_marker(monkeypatch) -> None:
     monkeypatch.setenv("AICRM_QUEUE_RUNTIME_EXECUTE", "1")
+    monkeypatch.delenv("AICRM_QUEUE_RUNTIME_ALLOWLISTED_CANARY", raising=False)
 
     with pytest.raises(SystemExit):
         run_execution_runtime._parse_args(["--queue-kind", "external", "--generation", "1", "--execute"])
@@ -88,3 +89,21 @@ def test_external_execute_is_test_only_until_canary_review(monkeypatch) -> None:
         ]
     )
     assert args.test_only is True
+
+    monkeypatch.setenv("AICRM_QUEUE_RUNTIME_ALLOWLISTED_CANARY", "1")
+    canary = run_execution_runtime._parse_args(
+        ["--queue-kind", "external", "--generation", "1", "--execute"]
+    )
+    assert canary.test_only is False
+
+    with pytest.raises(SystemExit):
+        run_execution_runtime._parse_args(
+            [
+                "--queue-kind",
+                "external",
+                "--generation",
+                "1",
+                "--execute",
+                "--test-only",
+            ]
+        )

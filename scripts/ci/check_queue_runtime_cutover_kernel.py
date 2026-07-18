@@ -29,10 +29,41 @@ FORBIDDEN_PROVIDER_OWNER_TOKENS = (
     "AICRM_GROUP_OPS_MATERIAL_UPLOAD_MODE=real",
     "AICRM_INTERNAL_EVENT_RELAY_ROLE=owner",
 )
+CANARY_SCOPE_LITERAL_ALLOWLIST = frozenset(
+    {
+        "aicrm_next/admin_config/application.py",
+        "aicrm_next/admin_config/application_support.py",
+        "aicrm_next/platform_foundation/execution_runtime/repository.py",
+        "aicrm_next/platform_foundation/execution_runtime/validation.py",
+        "aicrm_next/platform_foundation/external_effects/canary_repository.py",
+        "aicrm_next/platform_foundation/external_effects/models.py",
+        "aicrm_next/platform_foundation/external_effects/repo_memory.py",
+        "aicrm_next/platform_foundation/external_effects/wecom_canary_policy.py",
+    }
+)
+
+
+def collect_canary_scope_producer_errors(root: Path = ROOT) -> list[str]:
+    """Keep the privileged canary scope out of ordinary application producers."""
+
+    source_root = root / "aicrm_next"
+    if not source_root.exists():
+        return []
+    errors: list[str] = []
+    for path in sorted(source_root.rglob("*.py")):
+        relative = path.relative_to(root).as_posix()
+        if relative in CANARY_SCOPE_LITERAL_ALLOWLIST:
+            continue
+        body = path.read_text(encoding="utf-8")
+        if '"allowlisted_canary"' in body or "'allowlisted_canary'" in body:
+            errors.append(
+                f"{relative}: ordinary producers must use the CAS canary authorization service"
+            )
+    return errors
 
 
 def collect_errors(root: Path = ROOT) -> list[str]:
-    errors: list[str] = []
+    errors: list[str] = collect_canary_scope_producer_errors(root)
     expected = set(CANONICAL_RUNTIME_SERVICES)
     discovered = {
         path.name
@@ -157,8 +188,9 @@ def collect_errors(root: Path = ROOT) -> list[str]:
         errors.append("generation cutover must import the canonical PR-2 service inventory")
     for token in (
         "AICRM_QUEUE_RUNTIME_EXECUTE=1",
-        "AICRM_QUEUE_RUNTIME_TEST_ONLY=1",
-        "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY=1",
+        "AICRM_QUEUE_RUNTIME_TEST_ONLY={test_flag}",
+        "AICRM_QUEUE_RUNTIME_ALLOWLISTED_CANARY={allowlisted_flag}",
+        "AICRM_EXTERNAL_EFFECT_TEST_EXECUTION_ONLY={test_flag}",
         "AICRM_QUEUE_CUTOVER_COMMITTED=",
         "ACTIVATE_QUEUE_GENERATION_",
         "--owner-inventory",

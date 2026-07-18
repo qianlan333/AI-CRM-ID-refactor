@@ -327,6 +327,30 @@ class ExecutionRuntimeRepository:
         if queue_kind == "external_effect":
             connection.execute(
                 """
+                INSERT INTO queue_runtime_lease_recovery_event (
+                    queue_kind, queue_row_id, worker_generation,
+                    error_code, lease_expires_at
+                )
+                SELECT 'external_effect', id, worker_generation,
+                       CASE
+                           WHEN provider_call_started_at IS NULL
+                           THEN 'lease_expired_before_dispatch'
+                           ELSE 'lease_expired_after_dispatch'
+                       END,
+                       lease_expires_at
+                FROM external_effect_job
+                WHERE lane = %s
+                  AND status = 'dispatching'
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= CURRENT_TIMESTAMP
+                ON CONFLICT (
+                    queue_kind, queue_row_id, lease_expires_at, error_code
+                ) DO NOTHING
+                """,
+                (lane,),
+            )
+            connection.execute(
+                """
                 UPDATE external_effect_attempt attempt
                 SET status = 'unknown_after_dispatch',
                     response_summary_json = COALESCE(attempt.response_summary_json, '{}'::jsonb)
@@ -408,6 +432,25 @@ class ExecutionRuntimeRepository:
         if queue_kind == "internal_event":
             connection.execute(
                 """
+                INSERT INTO queue_runtime_lease_recovery_event (
+                    queue_kind, queue_row_id, worker_generation,
+                    error_code, lease_expires_at
+                )
+                SELECT 'internal_event', id, worker_generation,
+                       'lease_expired', lease_expires_at
+                FROM internal_event_consumer_run
+                WHERE lane = %s
+                  AND status = 'running'
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= CURRENT_TIMESTAMP
+                ON CONFLICT (
+                    queue_kind, queue_row_id, lease_expires_at, error_code
+                ) DO NOTHING
+                """,
+                (lane,),
+            )
+            connection.execute(
+                """
                 UPDATE internal_event_consumer_run
                 SET status = CASE
                         WHEN attempt_count + 1 >= max_attempts THEN 'failed_terminal'
@@ -447,6 +490,25 @@ class ExecutionRuntimeRepository:
         if queue_kind == "internal_outbox":
             connection.execute(
                 """
+                INSERT INTO queue_runtime_lease_recovery_event (
+                    queue_kind, queue_row_id, worker_generation,
+                    error_code, lease_expires_at
+                )
+                SELECT 'internal_outbox', id, worker_generation,
+                       'lease_expired', lease_expires_at
+                FROM internal_event_outbox
+                WHERE lane = %s
+                  AND status = 'running'
+                  AND lease_expires_at IS NOT NULL
+                  AND lease_expires_at <= CURRENT_TIMESTAMP
+                ON CONFLICT (
+                    queue_kind, queue_row_id, lease_expires_at, error_code
+                ) DO NOTHING
+                """,
+                (lane,),
+            )
+            connection.execute(
+                """
                 UPDATE internal_event_outbox
                 SET status = CASE
                         WHEN attempt_count >= max_attempts THEN 'failed_terminal'
@@ -478,6 +540,25 @@ class ExecutionRuntimeRepository:
             )
             return
 
+        connection.execute(
+            """
+            INSERT INTO queue_runtime_lease_recovery_event (
+                queue_kind, queue_row_id, worker_generation,
+                error_code, lease_expires_at
+            )
+            SELECT 'webhook_inbox', id, worker_generation,
+                   'lease_expired', lease_expires_at
+            FROM webhook_inbox
+            WHERE lane = %s
+              AND status = 'processing'
+              AND lease_expires_at IS NOT NULL
+              AND lease_expires_at <= CURRENT_TIMESTAMP
+            ON CONFLICT (
+                queue_kind, queue_row_id, lease_expires_at, error_code
+            ) DO NOTHING
+            """,
+            (lane,),
+        )
         connection.execute(
             """
             UPDATE webhook_inbox

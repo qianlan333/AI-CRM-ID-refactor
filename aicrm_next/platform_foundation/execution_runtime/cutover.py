@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Protocol, Sequence
+from uuid import uuid4
+
+from psycopg import sql
 
 from aicrm_next.shared.runtime import raw_database_url
 
@@ -45,6 +49,7 @@ ACTIVATABLE_LANES = frozenset(
         "wecom_interactive",
         "wecom_bulk",
         "wecom_media",
+        "outbound_webhook",
     }
 )
 
@@ -156,7 +161,7 @@ class RuntimeGenerationRepository:
         if not normalized_reason:
             raise ValueError("reason is required")
         if not normalized_lanes or any(lane not in ACTIVATABLE_LANES for lane in normalized_lanes):
-            raise ValueError("lanes must be a non-empty subset of the approved non-outbound lanes")
+            raise ValueError("lanes must be a non-empty subset of the approved runtime lanes")
 
         with self._connect(self._database_url) as connection:
             with connection.transaction():
@@ -300,6 +305,283 @@ class RuntimeGenerationRepository:
             raise GenerationCASConflict("disable-claims CAS lost")
         return self._state(row)
 
+    def active_claim_count(self) -> int:
+        with self._connect(self._database_url) as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*)::BIGINT AS active_count
+                FROM (
+                    SELECT id FROM external_effect_job WHERE status = 'dispatching'
+                    UNION ALL
+                    SELECT id FROM internal_event_consumer_run WHERE status = 'running'
+                    UNION ALL
+                    SELECT id FROM internal_event_outbox WHERE status = 'running'
+                    UNION ALL
+                    SELECT id FROM webhook_inbox WHERE status = 'processing'
+                ) active
+                """
+            ).fetchone()
+        return int((row or {}).get("active_count") or 0)
+
+    def wait_claims_drained(
+        self,
+        *,
+        timeout_seconds: int = 60,
+        poll_interval_seconds: float = 0.5,
+    ) -> None:
+        deadline = time.monotonic() + max(1, int(timeout_seconds or 60))
+        while self.active_claim_count():
+            if time.monotonic() >= deadline:
+                raise RuntimeError("queue claims did not drain before scope transition")
+            time.sleep(max(0.1, min(float(poll_interval_seconds or 0.5), 5.0)))
+
+    def transition_external_claim_scope(
+        self,
+        *,
+        expected_generation: int,
+        expected_policy_version: str,
+        target_policy_version: str,
+        expected_scope: str,
+        target_scope: str,
+        actor: str,
+        reason: str,
+    ) -> GenerationState:
+        generation = self._generation(expected_generation, allow_zero=False)
+        policy_version = str(expected_policy_version or "").strip()
+        next_policy_version = str(target_policy_version or "").strip()
+        source_scope = str(expected_scope or "").strip()
+        destination_scope = str(target_scope or "").strip()
+        normalized_actor = str(actor or "").strip()
+        normalized_reason = str(reason or "").strip()
+        if (source_scope, destination_scope) not in {
+            ("test_loopback", "allowlisted"),
+            ("allowlisted", "test_loopback"),
+        }:
+            raise ValueError("only test_loopback <-> allowlisted scope transitions are supported")
+        if (
+            not policy_version
+            or not next_policy_version
+            or next_policy_version == policy_version
+            or not normalized_actor
+            or not normalized_reason
+        ):
+            raise ValueError("distinct source/target policy versions, actor and reason are required")
+
+        with self._connect(self._database_url) as connection:
+            with connection.transaction():
+                before_row = connection.execute(
+                    """
+                    SELECT active_generation, claim_enabled, rollout_mode,
+                           policy_version, external_claim_scope,
+                           updated_by, updated_reason, updated_at
+                    FROM queue_runtime_control
+                    WHERE singleton = TRUE
+                    FOR UPDATE
+                    """
+                ).fetchone()
+                if not before_row:
+                    raise RuntimeError("queue runtime control row is missing")
+                before = self._state(before_row)
+                if (
+                    before.active_generation != generation
+                    or before.claim_enabled
+                    or before.policy_version != policy_version
+                    or before.external_claim_scope != source_scope
+                ):
+                    raise GenerationCASConflict("scope transition precondition changed before the CAS")
+                active = connection.execute(
+                    """
+                    SELECT COUNT(*)::BIGINT AS active_count
+                    FROM (
+                        SELECT id FROM external_effect_job WHERE status = 'dispatching'
+                        UNION ALL
+                        SELECT id FROM internal_event_consumer_run WHERE status = 'running'
+                        UNION ALL
+                        SELECT id FROM internal_event_outbox WHERE status = 'running'
+                        UNION ALL
+                        SELECT id FROM webhook_inbox WHERE status = 'processing'
+                    ) active
+                    """
+                ).fetchone()
+                if int((active or {}).get("active_count") or 0):
+                    raise GenerationCASConflict("queue claims are not drained")
+                snapshot = connection.execute(
+                    """
+                    SELECT policy_json
+                    FROM queue_policy_snapshot
+                    WHERE policy_version = %s
+                    FOR UPDATE
+                    """,
+                    (policy_version,),
+                ).fetchone()
+                if not snapshot:
+                    raise GenerationCASConflict("queue policy snapshot is missing")
+                before_policy = dict(snapshot.get("policy_json") or {})
+                if str(before_policy.get("external_claim_scope") or "") != source_scope:
+                    raise GenerationCASConflict("queue policy snapshot scope does not match runtime control")
+                after_policy = {**before_policy, "external_claim_scope": destination_scope}
+                inserted_snapshot = connection.execute(
+                    """
+                    INSERT INTO queue_policy_snapshot (
+                        policy_version, policy_json, created_by, created_reason
+                    ) VALUES (%s, %s::jsonb, %s, %s)
+                    ON CONFLICT (policy_version) DO NOTHING
+                    RETURNING policy_version
+                    """,
+                    (
+                        next_policy_version,
+                        json.dumps(after_policy, ensure_ascii=False),
+                        normalized_actor,
+                        normalized_reason,
+                    ),
+                ).fetchone()
+                if not inserted_snapshot:
+                    raise GenerationCASConflict("target queue policy version already exists")
+                connection.execute(
+                    """
+                    UPDATE queue_lane_policy
+                    SET policy_version = %s,
+                        updated_by = %s,
+                        updated_reason = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE policy_version = %s
+                    """,
+                    (
+                        next_policy_version,
+                        normalized_actor,
+                        normalized_reason,
+                        policy_version,
+                    ),
+                )
+                open_statuses = {
+                    "external_effect_job": ("planned", "approved", "queued", "failed_retryable", "blocked"),
+                    "internal_event_consumer_run": ("pending", "failed_retryable", "blocked", "manual_retry"),
+                    "internal_event_outbox": ("pending", "failed_retryable", "blocked"),
+                    "webhook_inbox": ("received", "failed_retryable", "blocked"),
+                }
+                for table, statuses in open_statuses.items():
+                    connection.execute(
+                        sql.SQL(
+                            "UPDATE {} SET policy_version = %s, updated_at = CURRENT_TIMESTAMP "
+                            "WHERE policy_version = %s AND status = ANY(%s)"
+                        ).format(sql.Identifier(table)),
+                        (next_policy_version, policy_version, list(statuses)),
+                    )
+                    connection.execute(
+                        sql.SQL("ALTER TABLE {} ALTER COLUMN policy_version SET DEFAULT {}").format(
+                            sql.Identifier(table),
+                            sql.Literal(next_policy_version),
+                        )
+                    )
+                after_row = connection.execute(
+                    """
+                    UPDATE queue_runtime_control
+                    SET external_claim_scope = %s,
+                        policy_version = %s,
+                        updated_by = %s,
+                        updated_reason = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE singleton = TRUE
+                      AND active_generation = %s
+                      AND claim_enabled = FALSE
+                      AND policy_version = %s
+                      AND external_claim_scope = %s
+                    RETURNING active_generation, claim_enabled, rollout_mode,
+                              policy_version, external_claim_scope,
+                              updated_by, updated_reason, updated_at
+                    """,
+                    (
+                        destination_scope,
+                        next_policy_version,
+                        normalized_actor,
+                        normalized_reason,
+                        generation,
+                        policy_version,
+                        source_scope,
+                    ),
+                ).fetchone()
+                if not after_row:
+                    raise GenerationCASConflict("scope transition CAS lost")
+                connection.execute(
+                    """
+                    INSERT INTO queue_runtime_scope_transition_audit (
+                        transition_id, active_generation,
+                        from_policy_version, to_policy_version,
+                        from_scope, to_scope, actor, reason,
+                        policy_json_before, policy_json_after
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb)
+                    """,
+                    (
+                        "qrst_" + uuid4().hex,
+                        generation,
+                        policy_version,
+                        next_policy_version,
+                        source_scope,
+                        destination_scope,
+                        normalized_actor,
+                        normalized_reason,
+                        json.dumps(before_policy, ensure_ascii=False),
+                        json.dumps(after_policy, ensure_ascii=False),
+                    ),
+                )
+        return self._state(after_row)
+
+    def resume_claims(
+        self,
+        *,
+        expected_generation: int,
+        expected_policy_version: str,
+        expected_scope: str,
+        actor: str,
+        reason: str,
+    ) -> GenerationState:
+        generation = self._generation(expected_generation, allow_zero=False)
+        policy_version = str(expected_policy_version or "").strip()
+        scope = str(expected_scope or "").strip()
+        normalized_actor = str(actor or "").strip()
+        normalized_reason = str(reason or "").strip()
+        if scope not in {"test_loopback", "allowlisted"}:
+            raise ValueError("unsupported external claim scope")
+        if not policy_version or not normalized_actor or not normalized_reason:
+            raise ValueError("policy version, actor and reason are required")
+        with self._connect(self._database_url) as connection:
+            row = connection.execute(
+                """
+                UPDATE queue_runtime_control
+                SET claim_enabled = TRUE,
+                    rollout_mode = 'canary',
+                    updated_by = %s,
+                    updated_reason = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE singleton = TRUE
+                  AND active_generation = %s
+                  AND claim_enabled = FALSE
+                  AND policy_version = %s
+                  AND external_claim_scope = %s
+                  AND EXISTS (
+                      SELECT 1
+                      FROM queue_policy_snapshot snapshot
+                      WHERE snapshot.policy_version = queue_runtime_control.policy_version
+                        AND snapshot.policy_json->>'external_claim_scope' = %s
+                  )
+                RETURNING active_generation, claim_enabled, rollout_mode,
+                          policy_version, external_claim_scope,
+                          updated_by, updated_reason, updated_at
+                """,
+                (
+                    normalized_actor,
+                    normalized_reason,
+                    generation,
+                    policy_version,
+                    scope,
+                    scope,
+                ),
+            ).fetchone()
+            connection.commit()
+        if not row:
+            raise GenerationCASConflict("resume-claims CAS lost")
+        return self._state(row)
+
     def ready_heartbeat_names(
         self,
         *,
@@ -316,6 +598,28 @@ class RuntimeGenerationRepository:
                 WHERE generation = %s
                   AND listener_connected = TRUE
                   AND rollout_mode = 'canary'
+                  AND heartbeat_at >= CURRENT_TIMESTAMP - (%s * INTERVAL '1 second')
+                  AND service_name = ANY(%s)
+                """,
+                (target, freshness, list(REQUIRED_RUNTIME_HEARTBEATS)),
+            ).fetchall()
+        return frozenset(str(row.get("service_name") or "") for row in rows)
+
+    def fresh_listener_heartbeat_names(
+        self,
+        *,
+        generation: int,
+        freshness_seconds: int = 30,
+    ) -> frozenset[str]:
+        target = self._generation(generation, allow_zero=False)
+        freshness = max(10, min(int(freshness_seconds or 30), 300))
+        with self._connect(self._database_url) as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT service_name
+                FROM queue_worker_heartbeat
+                WHERE generation = %s
+                  AND listener_connected = TRUE
                   AND heartbeat_at >= CURRENT_TIMESTAMP - (%s * INTERVAL '1 second')
                   AND service_name = ANY(%s)
                 """,

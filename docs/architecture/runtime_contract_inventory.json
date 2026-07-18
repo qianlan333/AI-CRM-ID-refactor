@@ -386,6 +386,18 @@
       "line": 202
     },
     {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/wecom_runtime.py",
+      "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS",
+      "line": 19
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/wecom_runtime.py",
+      "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS",
+      "line": 19
+    },
+    {
       "accessor": "runtime_setting",
       "file": "aicrm_next/background_jobs/broadcast_queue_worker.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
@@ -400,14 +412,26 @@
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/shared/wecom_runtime.py",
+      "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS",
+      "line": 19
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/wecom_runtime.py",
       "key": "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
       "line": 19
+    },
+    {
+      "accessor": "runtime_bool",
+      "file": "scripts/ops/run_test_loopback_canary.py",
+      "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
+      "line": 203
     },
     {
       "accessor": "runtime_setting",
       "file": "aicrm_next/platform_foundation/external_effects/adapters.py",
       "key": "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
-      "line": 312
+      "line": 317
     },
     {
       "accessor": "declared_runtime_environment_key",
@@ -437,7 +461,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/automation_engine/group_ops/scheduler.py",
       "key": "AICRM_GROUP_OPS_TIMEZONE",
-      "line": 29
+      "line": 30
     },
     {
       "accessor": "os.getenv",
@@ -569,7 +593,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_config/application.py",
       "key": "AICRM_NEXT_ALIPAY_MODE",
-      "line": 1012
+      "line": 1049
     },
     {
       "accessor": "os.getenv",
@@ -767,7 +791,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/admin_config/application.py",
       "key": "AICRM_NEXT_WECHAT_PAY_MODE",
-      "line": 1006
+      "line": 1043
     },
     {
       "accessor": "os.getenv",
@@ -988,6 +1012,12 @@
     {
       "accessor": "declared_runtime_environment_key",
       "file": "aicrm_next/shared/wecom_runtime.py",
+      "key": "AICRM_WECOM_CANARY_ALLOWED_MEDIA_TARGETS",
+      "line": 19
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/wecom_runtime.py",
       "key": "AICRM_WECOM_DEFAULT_SENDER_USERID",
       "line": 19
     },
@@ -1014,6 +1044,12 @@
       "file": "aicrm_next/integration_gateway/wecom_private_adapter.py",
       "key": "AICRM_WECOM_PRIVATE_ADAPTER_MODE",
       "line": 20
+    },
+    {
+      "accessor": "declared_runtime_environment_key",
+      "file": "aicrm_next/shared/wecom_runtime.py",
+      "key": "AICRM_WECOM_PROVIDER_TARGET_POLICY",
+      "line": 19
     },
     {
       "accessor": "runtime_setting",
@@ -2132,8 +2168,12 @@
     "AICRM_DATA_HEALTH_PROJECTION_FRESHNESS_MAX_MINUTES",
     "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
     "AICRM_ENV_FILE",
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_CHAT_IDS",
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_GROUP_OPS_WEBHOOK_KEYS",
     "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
+    "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS",
     "AICRM_EXTERNAL_EFFECT_ALLOWED_TYPES",
+    "AICRM_EXTERNAL_EFFECT_WEBHOOK_EXECUTE",
     "AICRM_EXTERNAL_EFFECT_WEBHOOK_TIMEOUT_SECONDS",
     "AICRM_EXTERNAL_EFFECT_WECOM_EXECUTE",
     "AICRM_FORCE_FULL_CI",
@@ -2208,10 +2248,12 @@
     "AICRM_USER_OPS_SEND_RISK_LEVEL",
     "AICRM_WECOM_ADMIN_AUTH_TIMEOUT",
     "AICRM_WECOM_API_BASE",
+    "AICRM_WECOM_CANARY_ALLOWED_MEDIA_TARGETS",
     "AICRM_WECOM_DEFAULT_SENDER_USERID",
     "AICRM_WECOM_GROUP_ADAPTER_MODE",
     "AICRM_WECOM_OPERATION_MEMBERS_TIMEOUT",
     "AICRM_WECOM_PRIVATE_ADAPTER_MODE",
+    "AICRM_WECOM_PROVIDER_TARGET_POLICY",
     "AICRM_WECOM_TAG_AGENT_SECRET",
     "AICRM_WECOM_TAG_API_BASE",
     "AICRM_WECOM_TAG_CORP_ID",
@@ -3095,7 +3137,7 @@
     }
   ],
   "migration_heads": [
-    "0134_execution_timeline_graph_indexes"
+    "0136_queue_runtime_validation_soak"
   ],
   "openapi_components": {
     "schemas": {
@@ -45331,6 +45373,14 @@
       "unit": "aicrm-queue-invariant-check.timer"
     },
     {
+      "kick_after_timer_restart": false,
+      "kick_failure_fatal": false,
+      "kind": "timer",
+      "service": "aicrm-queue-soak-snapshot.service",
+      "state": "active_autostart",
+      "unit": "aicrm-queue-soak-snapshot.timer"
+    },
+    {
       "kind": "service",
       "state": "retired_forbidden",
       "unit": "aicrm-reply-monitor-capture.service"
@@ -48305,6 +48355,19 @@
     {
       "domain": "platform_foundation",
       "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0135_queue_scope_transition_audit",
+      "pii_level": "none",
+      "read_owners": [
+        "ID-validation queue operation evidence",
+        "execution runtime consistency audit"
+      ],
+      "table": "queue_runtime_canary_config_audit",
+      "write_owner": "scripts.ops.configure_wecom_canary"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
       "lifecycle": "config",
       "migration_source": "0126_postgres_execution_runtime",
       "pii_level": "none",
@@ -48314,6 +48377,71 @@
       ],
       "table": "queue_runtime_control",
       "write_owner": "aicrm_next.platform_foundation.execution_runtime"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0136_queue_runtime_validation_soak",
+      "pii_level": "none",
+      "read_owners": [
+        "ID-validation 72-hour soak gate",
+        "execution runtime consistency audit"
+      ],
+      "table": "queue_runtime_lease_recovery_event",
+      "write_owner": "aicrm_next.platform_foundation.execution_runtime.repository"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0135_queue_scope_transition_audit",
+      "pii_level": "none",
+      "read_owners": [
+        "ID-validation queue operation evidence",
+        "execution runtime consistency audit"
+      ],
+      "table": "queue_runtime_scope_transition_audit",
+      "write_owner": "aicrm_next.platform_foundation.execution_runtime.cutover"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "canonical",
+      "migration_source": "0136_queue_runtime_validation_soak",
+      "pii_level": "none",
+      "read_owners": [
+        "15-minute soak snapshot service",
+        "ID-validation queue operation status"
+      ],
+      "table": "queue_runtime_soak_run",
+      "write_owner": "scripts.ops.manage_queue_runtime_soak"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0136_queue_runtime_validation_soak",
+      "pii_level": "none",
+      "read_owners": [
+        "ID-validation 72-hour soak completion gate",
+        "execution runtime consistency audit"
+      ],
+      "table": "queue_runtime_soak_snapshot",
+      "write_owner": "scripts.ops.manage_queue_runtime_soak"
+    },
+    {
+      "domain": "platform_foundation",
+      "drop_candidate": false,
+      "lifecycle": "audit",
+      "migration_source": "0136_queue_runtime_validation_soak",
+      "pii_level": "none",
+      "read_owners": [
+        "ID-validation 72-hour soak gate",
+        "execution runtime consistency audit"
+      ],
+      "table": "queue_runtime_validation_evidence",
+      "write_owner": "aicrm_next.platform_foundation.execution_runtime.validation"
     },
     {
       "domain": "platform_foundation",

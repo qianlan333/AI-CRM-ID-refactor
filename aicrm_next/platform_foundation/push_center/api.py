@@ -5,6 +5,7 @@ from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
@@ -59,7 +60,7 @@ def _json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
     payload.setdefault("route_owner", ROUTE_OWNER)
     payload.setdefault("real_external_call_executed", False)
     return JSONResponse(
-        payload,
+        jsonable_encoder(payload),
         status_code=status_code,
         headers={
             "X-AICRM-Route-Owner": ROUTE_OWNER,

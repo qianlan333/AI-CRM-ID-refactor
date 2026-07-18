@@ -26,7 +26,9 @@ from aicrm_next import internal_event_composition
 from aicrm_next.internal_event_composition import build_internal_event_consumer_registry
 from aicrm_next.platform_foundation.external_effects.adapters import WeComExternalContactDetailAdapter
 from aicrm_next.platform_foundation.external_effects.completion_events import EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE
+from aicrm_next.platform_foundation.external_effects import wecom_canary_policy
 from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
+from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
 from aicrm_next.platform_foundation.internal_events import InternalEventService
 from aicrm_next.platform_foundation.internal_events.outbox import InternalEventOutboxRelay
 from aicrm_next.platform_foundation.internal_events.worker import InternalEventWorker
@@ -179,6 +181,34 @@ class _SuccessfulIdentityBridge:
 def test_provider_result_is_private_and_continuation_failure_cannot_pollute_provider_success(monkeypatch) -> None:
     planned = _identity_plan("wm_private_result_001")
     job_id = int(planned["external_effect_job_id"])
+    monkeypatch.setattr(
+        wecom_canary_policy,
+        "runtime_setting",
+        lambda key, default="": (
+            "allowlisted_canary"
+            if key == wecom_canary_policy.WECOM_PROVIDER_TARGET_POLICY_KEY
+            else default
+        ),
+    )
+    monkeypatch.setattr(
+        wecom_canary_policy,
+        "runtime_csv",
+        lambda key: (
+            {"wm_private_result_001"}
+            if key == wecom_canary_policy.WECOM_ALLOWED_EXTERNAL_USERIDS_KEY
+            else set()
+        ),
+    )
+    repository = SQLAlchemyExternalEffectRepository()
+    current = repository.get_job(job_id)
+    assert current is not None
+    authorized = ExternalEffectService(repository).authorize_allowlisted_canary(
+        job_id,
+        actor="pytest",
+        reason="explicit provider-result canary fixture",
+        expected_version=current.row_version,
+    )
+    assert authorized is not None
     with _connect() as connection:
         connection.execute(
             """
@@ -192,7 +222,6 @@ def test_provider_result_is_private_and_continuation_failure_cannot_pollute_prov
             (job_id,),
         )
 
-    repository = SQLAlchemyExternalEffectRepository()
     leased = repository.get_job(job_id)
     assert leased is not None
     provider = _Provider()
