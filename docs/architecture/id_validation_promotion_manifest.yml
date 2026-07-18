@@ -3,6 +3,11 @@ version: 1
 source_repository: qianlan333/AI-CRM-ID-refactor
 target_repository: qianlan333/AI-CRM
 
+upstream_sync:
+  repository: qianlan333/AI-CRM
+  validated_sha: 2872e177c441eebacf2c6e56f63d8156556cc61d
+  strategy: ancestry_merge_preserving_id_only_overlay
+
 authorization:
   command: PROMOTE <validated_ID_SHA> TO AI-CRM
   creates_github_pr_only: true

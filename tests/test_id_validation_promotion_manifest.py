@@ -24,6 +24,11 @@ def test_current_id_validation_promotion_manifest_is_safe() -> None:
 
     assert validate_manifest(root=ROOT, manifest=manifest) == []
     assert manifest["authorization"]["command"] == "PROMOTE <validated_ID_SHA> TO AI-CRM"
+    assert manifest["upstream_sync"] == {
+        "repository": "qianlan333/AI-CRM",
+        "validated_sha": "2872e177c441eebacf2c6e56f63d8156556cc61d",
+        "strategy": "ancestry_merge_preserving_id_only_overlay",
+    }
     assert (
         classify_path(
             "aicrm_next/platform_foundation/execution_runtime/listener.py",
@@ -66,3 +71,12 @@ def test_manifest_rejects_ambiguous_guarded_path() -> None:
     errors = validate_manifest(root=ROOT, manifest=manifest)
 
     assert any("matches both id_only and mixed_review_required" in error for error in errors)
+
+
+def test_manifest_rejects_unreachable_upstream_sync_sha() -> None:
+    manifest = yaml.safe_load(MANIFEST.read_text(encoding="utf-8"))
+    manifest["upstream_sync"]["validated_sha"] = "0" * 40
+
+    errors = validate_manifest(root=ROOT, manifest=manifest)
+
+    assert "upstream_sync.validated_sha must be an ancestor of HEAD" in errors
