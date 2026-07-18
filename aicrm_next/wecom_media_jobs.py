@@ -14,9 +14,27 @@ from aicrm_next.platform_foundation.external_effects.repo import build_external_
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
 from aicrm_next.platform_foundation.external_effects.wecom_canary_policy import wecom_canary_job_gate_error
 from aicrm_next.shared.runtime import production_data_ready, production_environment
+from aicrm_next.shared.sensitive_data import redact_sensitive_text
 
 
 ADAPTER_NAME = "wecom_media_upload"
+
+
+def _safe_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_code(value: Any, *, default: str = "") -> str:
+    normalized = str(value or "").strip()
+    allowed = set("_.:-")
+    if normalized and len(normalized) <= 128 and all(character.isalnum() or character in allowed for character in normalized):
+        return normalized
+    return default
 
 
 def _utc(value: datetime | None = None) -> datetime:
@@ -75,7 +93,28 @@ class WeComMediaUploadAdapter:
                 real_external_call_executed=False,
             )
         try:
-            lease = self._build_manager().ensure_ready(
+            manager = self._build_manager()
+        except Exception:
+            return ExternalEffectDispatchResult(
+                status="failed_retryable",
+                adapter_mode="execute",
+                request_summary=request_summary,
+                response_summary={
+                    "real_external_call_executed": False,
+                    "wecom_media_upload_executed": False,
+                    "provider_result_received": False,
+                    "errcode": 0,
+                    "errmsg_present": False,
+                    "provider_error_classification": "",
+                    "provider_stage": "",
+                },
+                error_code="local_execution_error",
+                error_message="local_execution_error",
+                real_external_call_executed=False,
+                provider_result_received=False,
+            )
+        try:
+            lease = manager.ensure_ready(
                 request_summary["material_kind"],
                 request_summary["material_id"],
                 upload_kind=request_summary["upload_kind"],
@@ -83,8 +122,9 @@ class WeComMediaUploadAdapter:
             )
         except Exception as exc:
             retryable = bool(getattr(exc, "retryable", False))
-            error_code = str(getattr(exc, "code", "wecom_media_upload_failed") or "wecom_media_upload_failed")
-            external_call_executed = error_code in {"wecom_media_upload_failed", "empty_media_id"}
+            error_code = _safe_code(getattr(exc, "code", ""), default="external_call_unknown")
+            external_call_executed = bool(getattr(exc, "provider_call_executed", True))
+            provider_result_received = bool(getattr(exc, "provider_result_received", False))
             return ExternalEffectDispatchResult(
                 status="failed_retryable" if retryable else "failed_terminal",
                 adapter_mode="execute",
@@ -92,12 +132,16 @@ class WeComMediaUploadAdapter:
                 response_summary={
                     "real_external_call_executed": external_call_executed,
                     "wecom_media_upload_executed": external_call_executed,
-                    "provider_result_received": False,
+                    "provider_result_received": provider_result_received,
+                    "errcode": _safe_int(getattr(exc, "provider_errcode", 0)),
+                    "errmsg_present": bool(getattr(exc, "errmsg_present", False)),
+                    "provider_error_classification": _safe_code(getattr(exc, "provider_error_classification", "")),
+                    "provider_stage": _safe_code(getattr(exc, "provider_stage", "")),
                 },
                 error_code=error_code,
-                error_message=str(exc)[:500],
+                error_message=redact_sensitive_text(str(exc))[:500],
                 real_external_call_executed=external_call_executed,
-                provider_result_received=False,
+                provider_result_received=provider_result_received,
             )
         return ExternalEffectDispatchResult(
             status="succeeded",
