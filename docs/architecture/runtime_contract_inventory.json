@@ -377,7 +377,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/message_archive/api.py",
       "key": "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
-      "line": 146
+      "line": 148
     },
     {
       "accessor": "os.getenv",
@@ -1331,7 +1331,7 @@
       "accessor": "os.getenv",
       "file": "scripts/ops/check_identity_customer_event_driven.py",
       "key": "DATABASE_URL",
-      "line": 186
+      "line": 187
     },
     {
       "accessor": "os.getenv",

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 from fastapi.testclient import TestClient
 
+from aicrm_next.admin_jobs_archive_sync_gateway import record_archive_source_change as _record_archive_source_change
 from aicrm_next.message_archive.repo import PostgresArchiveSyncRepository
 from aicrm_next.message_archive.sync_service import execute_archive_sync
-from scripts.run_incremental_archive_sync import _record_archive_source_change
 from tests.admin_auth_test_helpers import access_token_headers, install_access_token
 
 
@@ -192,9 +194,34 @@ def test_archive_insert_and_refresh_event_share_one_transaction(monkeypatch) -> 
     assert connection.rollbacks == 0
     assert captured["connection"] is connection
     assert request.event_type == "message_archive.batch_ingested"
-    assert request.idempotency_key == "message_archive.batch_ingested:30654"
+    expected_batch_key = hashlib.sha256(b"91").hexdigest()
+    assert request.idempotency_key == f"message_archive.batch_ingested:{expected_batch_key}"
+    assert request.aggregate_id == expected_batch_key
     assert request.payload == {"inserted_count": 1, "last_seq": 30654}
     assert "must-not-enter-event" not in str(request)
+
+
+def test_archive_replay_at_same_last_seq_uses_inserted_rows_for_fresh_dirty_key(monkeypatch) -> None:
+    observed: list[tuple[int, int, str]] = []
+
+    def record(_conn, inserted_count: int, last_seq: int, batch_key: str):
+        observed.append((inserted_count, last_seq, batch_key))
+        return {"ok": True}
+
+    for row_id in (101, 102):
+        connection = _FakeArchiveConnection(insert_row={"id": row_id})
+        repository = PostgresArchiveSyncRepository(
+            "postgresql://example.invalid/aicrm",
+            source_change_recorder=record,
+        )
+        monkeypatch.setattr(repository, "_connect", lambda connection=connection: connection)
+        assert repository.insert_messages_and_advance_seq(
+            [{"seq": 30654, "msgid": f"archive-message-{row_id}", "unionid": "union-test"}],
+            last_seq=30654,
+        ) == 1
+
+    assert [item[:2] for item in observed] == [(1, 30654), (1, 30654)]
+    assert observed[0][2] != observed[1][2]
 
 
 def test_archive_insert_rolls_back_when_refresh_event_cannot_be_persisted(monkeypatch) -> None:
