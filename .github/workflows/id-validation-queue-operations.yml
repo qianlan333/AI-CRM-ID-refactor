@@ -8,6 +8,7 @@ on:
         required: true
         type: choice
         options:
+          - diagnose_customer_refresh
           - activate_test_loopback
           - verify_owner_state
           - run_test_loopback
@@ -91,8 +92,169 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  diagnose_customer_refresh:
+    if: >-
+      github.repository == 'qianlan333/AI-CRM-ID-refactor' &&
+      inputs.operation == 'diagnose_customer_refresh'
+    environment: id-validation
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_REPOSITORY: qianlan333/AI-CRM-ID-refactor
+      EXPECTED_DEPLOY_HOST: 49.232.57.128
+      EXPECTED_SSH_HOST_FINGERPRINT: SHA256:NXSJUveGoNy1lDsa+eOKho1h0ythB+pKTyijv8/KfU0
+      EXPECTED_RELEASE_SHA: ${{ inputs.expected_release_sha }}
+      PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health
+    steps:
+      - name: Read failed customer refresh evidence from 49
+        env:
+          DEPLOY_HOST: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+          username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
+          key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
+          command_timeout: 5m
+          envs: EXPECTED_REPOSITORY,EXPECTED_DEPLOY_HOST,EXPECTED_RELEASE_SHA,PUBLIC_HEALTH_URL,DEPLOY_HOST
+          script: |
+            set -e
+            set -o pipefail
+            test "$DEPLOY_HOST" = "$EXPECTED_DEPLOY_HOST"
+            test "$EXPECTED_REPOSITORY" = "qianlan333/AI-CRM-ID-refactor"
+            printf '%s' "$EXPECTED_RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+            cd '/home/ubuntu/极简 crm'
+            test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+            test "$(tr -d '\r\n' < .release-sha)" = "$EXPECTED_RELEASE_SHA"
+            test -z "$(git status --porcelain=v1 --untracked-files=all)"
+            actual_public_sha="$(
+              curl --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 -fsS \
+                -D - -o /dev/null "$PUBLIC_HEALTH_URL" |
+                awk 'tolower($1) == "x-aicrm-release-sha:" {print $2}' |
+                tr -d '\r'
+            )"
+            test "$actual_public_sha" = "$EXPECTED_RELEASE_SHA"
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            source /home/ubuntu/venvs/openclaw/bin/activate
+            python3 - <<'PY'
+            import hashlib
+            import json
+            import re
+
+            from sqlalchemy import text
+
+            from aicrm_next.shared.db_session import get_session_factory
+            from aicrm_next.shared.sensitive_data import redact_sensitive_text
+
+
+            def safe_error(value):
+                raw = str(value or "")
+                first_line = redact_sensitive_text(raw).splitlines()[0] if raw else ""
+                first_line = re.sub(r"'[^']{4,}'", "'[redacted-value]'", first_line)
+                return {
+                    "summary": first_line[:500],
+                    "sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest() if raw else "",
+                }
+
+
+            def safe_rows(rows):
+                payload = []
+                for raw in rows:
+                    row = dict(raw)
+                    for key in ("last_error_message", "error_message"):
+                        if key in row:
+                            row[key] = safe_error(row.get(key))
+                    payload.append(row)
+                return payload
+
+
+            with get_session_factory()() as session:
+                session.execute(text("SET TRANSACTION READ ONLY"))
+                intent = session.execute(
+                    text(
+                        """
+                        SELECT singleton_id, dirty_generation, completed_generation,
+                               signal_generation, running_generation, status,
+                               attempt_count, max_attempts, last_error_code,
+                               last_error_message, owner_consumer_run_id,
+                               row_version, available_at, updated_at
+                        FROM customer_read_model_refresh_intent
+                        WHERE singleton_id = 1
+                        """
+                    )
+                ).mappings().all()
+                runs = session.execute(
+                    text(
+                        """
+                        WITH refresh_events AS (
+                            SELECT id, event_id, idempotency_key
+                            FROM internal_event
+                            WHERE event_type = 'customer_read_model.refresh.requested'
+                            ORDER BY id DESC
+                            LIMIT 10
+                        )
+                        SELECT event.idempotency_key, run.id, run.consumer_name,
+                               run.status, run.attempt_count, run.max_attempts,
+                               run.last_error_code, run.last_error_message,
+                               run.policy_version, run.worker_generation,
+                               run.hold_reason, run.available_at,
+                               run.next_retry_at, run.updated_at
+                        FROM refresh_events event
+                        JOIN internal_event_consumer_run run
+                          ON run.event_id = event.event_id
+                        ORDER BY event.id DESC, run.id
+                        """
+                    )
+                ).mappings().all()
+                attempts = session.execute(
+                    text(
+                        """
+                        WITH refresh_events AS (
+                            SELECT id, event_id, idempotency_key
+                            FROM internal_event
+                            WHERE event_type = 'customer_read_model.refresh.requested'
+                            ORDER BY id DESC
+                            LIMIT 10
+                        )
+                        SELECT attempt.consumer_run_id, attempt.attempt_id,
+                               attempt.status, attempt.error_code,
+                               attempt.error_message, attempt.started_at,
+                               attempt.completed_at
+                        FROM internal_event_consumer_attempt attempt
+                        JOIN internal_event_consumer_run run
+                          ON run.id = attempt.consumer_run_id
+                        JOIN refresh_events event
+                          ON event.event_id = run.event_id
+                        ORDER BY event.id DESC, attempt.id
+                        """
+                    )
+                ).mappings().all()
+                outbox = session.execute(
+                    text(
+                        """
+                        SELECT id, status, attempt_count, max_attempts,
+                               last_error_code, last_error_message,
+                               policy_version, worker_generation, hold_reason,
+                               available_at, next_retry_at, updated_at
+                        FROM internal_event_outbox
+                        WHERE event_type = 'customer_read_model.refresh.requested'
+                        ORDER BY id DESC
+                        LIMIT 10
+                        """
+                    )
+                ).mappings().all()
+            print(json.dumps({
+                "intent": safe_rows(intent),
+                "consumer_runs": safe_rows(runs),
+                "consumer_attempts": safe_rows(attempts),
+                "outbox": safe_rows(outbox),
+            }, ensure_ascii=False, default=str, sort_keys=True))
+            PY
   operate:
-    if: github.repository == 'qianlan333/AI-CRM-ID-refactor'
+    if: >-
+      github.repository == 'qianlan333/AI-CRM-ID-refactor' &&
+      inputs.operation != 'diagnose_customer_refresh'
     environment: id-validation
     runs-on: ubuntu-latest
     env:

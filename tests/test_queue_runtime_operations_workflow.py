@@ -55,6 +55,39 @@ def test_queue_operations_workflow_uses_pinned_ssh_and_private_canary_spec() -> 
     assert "cancel-in-progress: false" in source
 
 
+def test_customer_refresh_diagnostic_is_read_only_redacted_and_exact_release_bound() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    diagnostic = source[
+        source.index("  diagnose_customer_refresh:") : source.index("  operate:")
+    ]
+
+    assert "- diagnose_customer_refresh" in source
+    assert "inputs.operation == 'diagnose_customer_refresh'" in diagnostic
+    assert "environment: id-validation" in diagnostic
+    assert "EXPECTED_DEPLOY_HOST: 49.232.57.128" in diagnostic
+    assert "PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health" in diagnostic
+    assert "secrets.ID_VALIDATION_DEPLOY_HOST" in diagnostic
+    assert "secrets.ID_VALIDATION_DEPLOY_USER" in diagnostic
+    assert "secrets.ID_VALIDATION_DEPLOY_SSH_KEY" in diagnostic
+    assert 'git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"' in diagnostic
+    assert 'actual_public_sha" = "$EXPECTED_RELEASE_SHA"' in diagnostic
+    assert "git status --porcelain=v1 --untracked-files=all" in diagnostic
+    assert "redact_sensitive_text" in diagnostic
+    assert 'session.execute(text("SET TRANSACTION READ ONLY"))' in diagnostic
+    assert "customer_read_model_refresh_intent" in diagnostic
+    assert "internal_event_consumer_attempt" in diagnostic
+    assert "internal_event_outbox" in diagnostic
+    for forbidden in (
+        "INSERT INTO",
+        "UPDATE ",
+        "DELETE FROM",
+        "qyapi.weixin.qq.com",
+        "journalctl",
+        "WECOM_CANARY_SPEC_B64",
+    ):
+        assert forbidden not in diagnostic
+
+
 def test_remote_queue_operation_has_server_lock_release_attestation_and_no_direct_provider() -> None:
     source = REMOTE_SCRIPT.read_text(encoding="utf-8")
 
