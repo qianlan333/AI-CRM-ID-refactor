@@ -634,6 +634,15 @@ python3 scripts/ops/check_unionid_identity_cutover.py \
   --register-existing-conflicts \
   --expected-release-sha "$after_sha" \
   | tee /tmp/aicrm-identity-preflight.json
+# A stale projection cannot repair itself after the deploy guard stops the
+# current internal runtime. Write one durable intent while the currently
+# verified generation still owns claims, then wait only for that queue-owned
+# projection to finish. This command never rebuilds inline or calls a provider.
+python3 scripts/run_customer_read_model_refresh.py \
+  --execute \
+  --source-key "deploy_preflight:${release_run_id}:${release_run_attempt}" \
+  --wait-seconds 180 \
+  | tee /tmp/aicrm-customer-read-model-deploy-preflight.json
 runtime_mutation_started=1
 runtime_transaction_partial=1
 python3 "$release_control_manager" \

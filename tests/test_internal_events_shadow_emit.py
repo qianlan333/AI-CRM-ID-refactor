@@ -26,6 +26,7 @@ from tests.wechat_identity_test_support import authorize_wechat_client
 QUESTIONNAIRE_CONSUMERS = frozenset({
     "ai_audience_source_poke_consumer",
     "automation_questionnaire_consumer",
+    "customer_read_model_dirty_consumer",
     "customer_timeline_projection_consumer",
     "customer_summary_consumer",
     "questionnaire_projection_consumer",

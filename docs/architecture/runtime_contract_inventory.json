@@ -377,7 +377,7 @@
       "accessor": "os.getenv",
       "file": "aicrm_next/message_archive/api.py",
       "key": "AICRM_ENABLE_IN_PROCESS_ARCHIVE_SYNC",
-      "line": 146
+      "line": 148
     },
     {
       "accessor": "os.getenv",
@@ -1331,7 +1331,7 @@
       "accessor": "os.getenv",
       "file": "scripts/ops/check_identity_customer_event_driven.py",
       "key": "DATABASE_URL",
-      "line": 176
+      "line": 187
     },
     {
       "accessor": "os.getenv",
@@ -2659,6 +2659,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "channel_entry.entered",
+      "handler_registered": true,
+      "max_attempts": 10
+    },
+    {
       "consumer_name": "customer_timeline_projection_consumer",
       "consumer_type": "projection",
       "event_type": "channel_entry.entered",
@@ -2827,6 +2834,13 @@
       "max_attempts": 10
     },
     {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "message_archive.batch_ingested",
+      "handler_registered": true,
+      "max_attempts": 10
+    },
+    {
       "consumer_name": "ai_assist_notify_consumer",
       "consumer_type": "handler_alias",
       "event_type": "ops_plan.approved",
@@ -2916,6 +2930,13 @@
       "event_type": "payment.succeeded",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "payment.succeeded",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "customer_timeline_projection_consumer",
@@ -3028,6 +3049,13 @@
       "event_type": "questionnaire.submitted",
       "handler_registered": true,
       "max_attempts": 5
+    },
+    {
+      "consumer_name": "customer_read_model_dirty_consumer",
+      "consumer_type": "projection",
+      "event_type": "questionnaire.submitted",
+      "handler_registered": true,
+      "max_attempts": 10
     },
     {
       "consumer_name": "customer_summary_consumer",
