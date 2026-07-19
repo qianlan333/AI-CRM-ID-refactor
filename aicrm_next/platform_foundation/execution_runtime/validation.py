@@ -62,6 +62,9 @@ TERMINAL_JOB_STATUSES = frozenset(
 )
 SAFE_DIAGNOSTIC_CODE = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 SAFE_ADAPTER_MODES = frozenset({"disabled", "execute", "fake", "fixture", "production", "simulated", "staging", "test_fake"})
+WECOM_INVALID_WELCOME_CODE = "wecom_error_41050"
+WECOM_INVALID_WELCOME_ERRCODE = 41050
+WECOM_WELCOME_PROVIDER_WINDOW_MS = 20_000
 
 
 def _safe_diagnostic_code(value: Any) -> str:
@@ -157,6 +160,54 @@ def resolve_external_effect_job_id(
     return job_ids[0]
 
 
+def mirrored_welcome_attestation_context(
+    database_url: str,
+    *,
+    job_id: int,
+    release_sha: str,
+    generation: int,
+    policy_version: str,
+) -> dict[str, Any]:
+    with open_runtime_connection(normalize_runtime_database_url(database_url)) as connection:
+        row = connection.execute(
+            """
+            SELECT evidence_id, status, evidence_json
+            FROM queue_runtime_validation_evidence
+            WHERE evidence_type = 'wecom_welcome'
+              AND release_sha = %s
+              AND active_generation = %s
+              AND policy_version = %s
+              AND job_id = %s
+            ORDER BY created_at DESC, evidence_id DESC
+            LIMIT 1
+            """,
+            (release_sha, int(generation), policy_version, int(job_id)),
+        ).fetchone()
+    if not row or str(row.get("status") or "") != "failed":
+        raise RuntimeError("latest welcome evidence is not an attestation-eligible failure")
+    evidence = dict(row.get("evidence_json") or {})
+    if evidence.get("upstream_welcome_attestation_eligible") is not True:
+        raise RuntimeError("welcome failure is not eligible for upstream delivery attestation")
+    source_inbox_id = int(evidence.get("source_webhook_inbox_id") or 0)
+    callback_duplicate_count = int(evidence.get("callback_duplicate_count") or 0)
+    callback_to_provider_boundary_ms = int(
+        evidence.get("callback_to_provider_boundary_ms") or 0
+    )
+    if (
+        source_inbox_id <= 0
+        or callback_duplicate_count != 0
+        or callback_to_provider_boundary_ms < 0
+        or callback_to_provider_boundary_ms >= WECOM_WELCOME_PROVIDER_WINDOW_MS
+    ):
+        raise RuntimeError("stored mirrored welcome evidence is incomplete")
+    return {
+        "source_webhook_inbox_id": source_inbox_id,
+        "callback_duplicate_count": callback_duplicate_count,
+        "callback_to_provider_boundary_ms": callback_to_provider_boundary_ms,
+        "source_validation_evidence_id": str(row.get("evidence_id") or ""),
+    }
+
+
 def test_loopback_receipt_evidence(repository: Any, job: Any) -> dict[str, Any]:
     receipts, total = repository.list_test_receipts(
         {"job_id": str(job.id)},
@@ -197,6 +248,7 @@ def record_external_effect_evidence(
     policy_matches = str(job.policy_version or "") == str(policy_version or "")
     policy_proof_valid = policy_matches
     provider_policy_error = "" if is_loopback else wecom_canary_job_gate_error(job)
+    provider_diagnostics = _provider_diagnostics(provider_attempts)
     receipt_proof_valid = bool(
         not is_loopback
         or (
@@ -206,7 +258,7 @@ def record_external_effect_evidence(
             and extra.get("test_receipt_response_2xx") is True
         )
     )
-    passed = bool(
+    normal_provider_success = bool(
         normalized_type
         and evidence_type_matches
         and policy_proof_valid
@@ -219,6 +271,37 @@ def record_external_effect_evidence(
         and len(provider_attempts) == 1
         and provider_attempts[0].status == "succeeded"
         and int(provider_attempts[0].worker_generation or 0) == int(generation)
+    )
+    callback_to_provider_boundary_ms = int(extra.get("callback_to_provider_boundary_ms") or 0)
+    upstream_welcome_attestation_eligible = bool(
+        normalized_type == "wecom_welcome"
+        and mapped_type == "wecom_welcome"
+        and evidence_type_matches
+        and policy_proof_valid
+        and not provider_policy_error
+        and str(job.payload_json.get("execution_scope") or "") == "allowlisted_canary"
+        and job.status == "failed_terminal"
+        and str(getattr(job, "last_error_code", "") or "") == WECOM_INVALID_WELCOME_CODE
+        and job.side_effect_executed
+        and job.provider_result_received
+        and int(job.worker_generation or 0) == int(generation)
+        and int(job.attempt_count or 0) == 1
+        and len(provider_attempts) == 1
+        and provider_attempts[0].status == "failed_terminal"
+        and str(getattr(provider_attempts[0], "error_code", "") or "") == WECOM_INVALID_WELCOME_CODE
+        and int(provider_attempts[0].worker_generation or 0) == int(generation)
+        and provider_diagnostics["provider_adapter_mode"] == "execute"
+        and provider_diagnostics["provider_error_classification"] == "terminal"
+        and provider_diagnostics["provider_errcode"] == WECOM_INVALID_WELCOME_ERRCODE
+        and provider_diagnostics["provider_blocked"] is False
+        and int(extra.get("source_webhook_inbox_id") or 0) > 0
+        and int(extra.get("callback_duplicate_count") or 0) == 0
+        and 0 <= callback_to_provider_boundary_ms < WECOM_WELCOME_PROVIDER_WINDOW_MS
+    )
+    upstream_welcome_delivery_attested = extra.get("upstream_welcome_delivery_attested") is True
+    passed = normal_provider_success or bool(
+        upstream_welcome_attestation_eligible
+        and upstream_welcome_delivery_attested
     )
     evidence = {
         "job_status": str(job.status),
@@ -237,9 +320,21 @@ def record_external_effect_evidence(
         "test_receipt_proof_valid": receipt_proof_valid,
         "execution_scope": str(job.payload_json.get("execution_scope") or ""),
         **extra,
+        "normal_provider_success": normal_provider_success,
+        "upstream_welcome_attestation_eligible": upstream_welcome_attestation_eligible,
+        "upstream_welcome_delivery_attested": upstream_welcome_delivery_attested,
+        "delivery_proof_mode": (
+            "provider_success"
+            if normal_provider_success
+            else (
+                "upstream_operator_attested"
+                if passed and upstream_welcome_attestation_eligible
+                else ""
+            )
+        ),
         "target_values_redacted": True,
         "error_messages_redacted": True,
-        **_provider_diagnostics(provider_attempts),
+        **provider_diagnostics,
     }
     with open_runtime_connection(normalize_runtime_database_url(database_url)) as connection:
         connection.execute(

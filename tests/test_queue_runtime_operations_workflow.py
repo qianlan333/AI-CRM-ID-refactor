@@ -51,6 +51,8 @@ def test_queue_operations_workflow_uses_pinned_ssh_and_private_canary_spec() -> 
     assert "Import guarded production canary channel asset on 49" in source
     assert "Ingest guarded production canary callback transcript on 49" in source
     assert "Arm guarded real-time callback canary on 49" in source
+    assert "upstream_welcome_delivery_attested:" in source
+    assert "QUEUE_UPSTREAM_WELCOME_DELIVERY_ATTESTED" in source
     assert "Execute guarded non-spec queue operation on 49" in source
     assert "cancel-in-progress: false" in source
 
@@ -152,6 +154,7 @@ def test_remote_queue_operation_has_server_lock_release_attestation_and_no_direc
         "manage_queue_runtime_soak.py",
     ):
         assert f"scripts/ops/{script}" in source
+    assert "--upstream-welcome-delivery-attested" in source
     for forbidden in (
         "qyapi.weixin.qq.com",
         "run-due",

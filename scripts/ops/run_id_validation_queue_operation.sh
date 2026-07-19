@@ -23,6 +23,7 @@ readonly queue_job_id="${QUEUE_JOB_ID:-0}"
 readonly queue_expected_version="${QUEUE_EXPECTED_VERSION:-0}"
 readonly queue_evidence_type="${QUEUE_EVIDENCE_TYPE:-}"
 readonly queue_canary_scenarios="${QUEUE_CANARY_SCENARIOS:-private,group,contact_detail,media,profile}"
+readonly queue_upstream_welcome_delivery_attested="${QUEUE_UPSTREAM_WELCOME_DELIVERY_ATTESTED:-false}"
 
 fail() {
   echo "$1" >&2
@@ -82,6 +83,10 @@ if ! printf '%s' "$queue_run_id" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$';
 fi
 if ! printf '%s' "$queue_canary_scenarios" | grep -Eq '^[a-z_]+(,[a-z_]+)*$'; then
   fail "canary scenarios are invalid"
+fi
+if [ "$queue_upstream_welcome_delivery_attested" != "true" ] && \
+   [ "$queue_upstream_welcome_delivery_attested" != "false" ]; then
+  fail "upstream welcome delivery attestation input is invalid"
 fi
 if [ -z "$queue_target_policy_version" ]; then
   case "$queue_operation" in
@@ -409,10 +414,15 @@ case "$queue_operation" in
     if [ "$queue_job_id" != "0" ]; then
       attest_job_args=(--job-id "$queue_job_id")
     fi
+    upstream_welcome_attestation_args=()
+    if [ "$queue_upstream_welcome_delivery_attested" = "true" ]; then
+      upstream_welcome_attestation_args+=(--upstream-welcome-delivery-attested)
+    fi
     AICRM_QUEUE_EVIDENCE_ATTEST_AUTHORIZED=1 python3 scripts/ops/attest_queue_runtime_validation.py \
       --execution-id "$queue_execution_id" \
       "${attest_job_args[@]}" \
       --evidence-type "$queue_evidence_type" \
+      "${upstream_welcome_attestation_args[@]}" \
       "${common_identity[@]}" \
       --apply \
       --confirmation "ATTEST_QUEUE_EVIDENCE_${queue_execution_id}_${queue_generation}"
