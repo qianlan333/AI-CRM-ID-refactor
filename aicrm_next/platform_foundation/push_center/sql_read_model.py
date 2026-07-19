@@ -15,6 +15,7 @@ from aicrm_next.platform_foundation.execution_runtime.read_model import (
     queue_policy_eligible_predicate,
 )
 from aicrm_next.platform_foundation.execution_runtime.repository import (
+    external_canary_authorization_predicate,
     external_claim_scope_predicate,
     external_effect_claim_order_sql,
 )
@@ -1008,6 +1009,9 @@ _QUEUE_CONTEXT_CLAIM_ORDER_SQL = external_effect_claim_order_sql(
     row_alias="rows",
     fairness_alias="rows",
 )
+_QUEUE_CONTEXT_CANARY_AUTHORIZED_SQL = external_canary_authorization_predicate(
+    row_alias="e"
+)
 
 
 _QUEUE_CONTEXT_SQL = r"""
@@ -1037,6 +1041,7 @@ WITH target AS (
         e.status = 'unknown_after_dispatch' AS unknown_state,
         e.status IN ('failed_terminal', 'blocked') AS dlq_state,
         COALESCE(e.payload_json->>'execution_scope', '') AS execution_scope,
+        (__CANARY_AUTHORIZED_SQL__) AS canary_authorized,
         fairness.last_claimed_at,
         (e.lease_expires_at IS NULL OR e.lease_expires_at <= CURRENT_TIMESTAMP) AS lease_available,
         EXISTS (
@@ -1096,6 +1101,9 @@ LIMIT 1
 """.replace("__ELIGIBLE_SQL__", _QUEUE_CONTEXT_ELIGIBLE_SQL).replace(
     "__CLAIM_ORDER_SQL__",
     _QUEUE_CONTEXT_CLAIM_ORDER_SQL,
+).replace(
+    "__CANARY_AUTHORIZED_SQL__",
+    _QUEUE_CONTEXT_CANARY_AUTHORIZED_SQL,
 )
 
 

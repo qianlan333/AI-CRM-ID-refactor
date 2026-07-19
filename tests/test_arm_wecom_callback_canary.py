@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -62,6 +63,7 @@ def _inbox_row(*, status: str = "received") -> dict:
         "status": status,
         "processing_summary_json": {
             "handled": True,
+            "event_log_id": 42,
             "external_effect_job_ids": [11, 12, 13],
         },
         "payload_json": {
@@ -214,6 +216,45 @@ def test_clean_worker_processing_rejects_duplicate_retry_or_wrong_generation(
 
     with pytest.raises(arm.CallbackCanaryError, match="one clean runtime claim"):
         arm._assert_clean_worker_processing(inbox, generation=1)
+
+
+def test_freeze_jobs_rejects_a_historical_relationship_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return None
+
+        @staticmethod
+        def transaction():
+            return nullcontext()
+
+        @staticmethod
+        def execute(_statement, _parameters):
+            rows = [
+                {
+                    "id": job_id,
+                    "source_event_id": "41" if job_id == 12 else "42",
+                    "status": "succeeded" if job_id == 12 else "queued",
+                    "attempt_count": 1 if job_id == 12 else 0,
+                    "provider_call_started_at": "2026-07-18T00:00:00Z" if job_id == 12 else None,
+                    "cancel_requested_at": None,
+                }
+                for job_id in (11, 12, 13)
+            ]
+            return SimpleNamespace(fetchall=lambda: rows)
+
+    monkeypatch.setattr(arm, "open_runtime_connection", lambda _url: Connection())
+
+    with pytest.raises(arm.CallbackCanaryError, match="historical relationship job"):
+        arm._freeze_jobs(
+            "postgresql://canary",
+            job_ids=[11, 12, 13],
+            event_log_id=42,
+        )
 
 
 def test_job_map_requires_exact_welcome_tag_and_detail_payloads(

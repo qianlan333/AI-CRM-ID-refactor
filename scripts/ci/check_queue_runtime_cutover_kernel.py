@@ -256,6 +256,8 @@ def collect_errors(root: Path = ROOT) -> list[str]:
         ),
         "aicrm_next/platform_foundation/execution_runtime/repository.py": (
             "external_claim_scope_predicate",
+            "external_canary_authorization_predicate",
+            "canary_authorized_expression",
             "def next_due_at(",
             "test_only: bool = False",
         ),
@@ -266,6 +268,17 @@ def collect_errors(root: Path = ROOT) -> list[str]:
         "aicrm_next/platform_foundation/execution_runtime/service.py": (
             "_validate_external_execution_scope",
             "database test-loopback scope requires a test-only worker",
+        ),
+        "aicrm_next/platform_foundation/external_effects/direct_claim_repository.py": (
+            "def direct_claims_allowed",
+            "direct_owner AS MATERIALIZED",
+            "control.claim_enabled",
+            "control.active_generation > 0",
+            "FOR SHARE",
+        ),
+        "aicrm_next/platform_foundation/external_effects/worker.py": (
+            "direct_claims_allowed",
+            "postgres_queue_runtime_is_active",
         ),
     }
     for relative, tokens in scope_contracts.items():

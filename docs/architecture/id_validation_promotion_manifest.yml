@@ -87,6 +87,7 @@ mixed_review_required:
     - aicrm_next/platform_foundation/auth_platform/webhook_hmac.py
     - aicrm_next/platform_foundation/execution_runtime/cutover.py
     - aicrm_next/platform_foundation/external_effects/adapters.py
+    - aicrm_next/platform_foundation/external_effects/direct_claim_repository.py
     - aicrm_next/platform_foundation/external_effects/models.py
     - aicrm_next/platform_foundation/external_effects/repo.py
     - aicrm_next/platform_foundation/external_effects/repo_contract.py

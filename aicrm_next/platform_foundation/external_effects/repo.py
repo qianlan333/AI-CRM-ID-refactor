@@ -26,6 +26,7 @@ from .models import (
 )
 from .completion_events import build_external_effect_completed_event
 from .canary_repository import ExternalEffectCanaryAuthorizationRepositoryMixin
+from .direct_claim_repository import ExternalEffectDirectClaimRepositoryMixin
 from .provider_result_repository import ExternalEffectProviderResultRepositoryMixin, encode_provider_result
 from .rate_limit import persist_rate_limit_cooldown
 from .repo_contract import (
@@ -44,7 +45,12 @@ from .repo_contract import (
     _text,
 )
 
-class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationRepositoryMixin, ExternalEffectProviderResultRepositoryMixin, ExternalEffectRepository):
+class SQLAlchemyExternalEffectRepository(
+    ExternalEffectCanaryAuthorizationRepositoryMixin,
+    ExternalEffectDirectClaimRepositoryMixin,
+    ExternalEffectProviderResultRepositoryMixin,
+    ExternalEffectRepository,
+):
     def __init__(self, session_factory: Callable[[], Session] | None = None):
         self._session_factory = session_factory or get_session_factory()
     def _one(self, statement: str, params: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -405,117 +411,6 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
             "oldest_failed_retryable_age_seconds": int(float(row.get("oldest_failed_retryable_age_seconds") or 0)),
         }
 
-    def list_due_jobs(self, *, limit: int = 50, effect_types: list[str] | None = None, test_only: bool = False) -> list[ExternalEffectJob]:
-        type_filter = "AND effect_type = ANY(:effect_types)" if effect_types else ""
-        test_filter = "AND COALESCE(payload_json->>'execution_scope', '') = 'test_loopback'" if test_only else ""
-        params: dict[str, Any] = {"limit": max(1, min(int(limit or 50), 200))}
-        if effect_types:
-            params["effect_types"] = [_text(item) for item in effect_types if _text(item)]
-        rows = self._all(
-            f"""
-            SELECT *
-            FROM external_effect_job
-            WHERE status IN ('queued', 'failed_retryable')
-              AND hold_reason = ''
-              AND attempt_count < max_attempts
-              AND scheduled_at <= CURRENT_TIMESTAMP
-              AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-              AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
-              {type_filter}
-              {test_filter}
-            ORDER BY priority ASC, scheduled_at ASC, id ASC
-            LIMIT :limit
-            """,
-            params,
-        )
-        return [job for row in rows if (job := _public_job(row)) is not None]
-
-    def acquire_due_jobs(
-        self,
-        *,
-        limit: int = 50,
-        locked_by: str,
-        effect_types: list[str] | None = None,
-        test_only: bool = False,
-        lease_seconds: int = 300,
-    ) -> list[ExternalEffectJob]:
-        type_filter = "AND effect_type = ANY(:effect_types)" if effect_types else ""
-        test_filter = "AND COALESCE(payload_json->>'execution_scope', '') = 'test_loopback'" if test_only else ""
-        params: dict[str, Any] = {
-            "limit": max(1, min(int(limit or 50), 200)),
-            "locked_by": _text(locked_by),
-            "lease_prefix": "eel_" + uuid4().hex,
-            "lease_seconds": max(30, min(int(lease_seconds or 300), 3600)),
-        }
-        if effect_types:
-            params["effect_types"] = [_text(item) for item in effect_types if _text(item)]
-        rows = self._write_all(
-            f"""
-            WITH due AS (
-                SELECT id
-                FROM external_effect_job
-                WHERE status IN ('queued', 'failed_retryable')
-                  AND hold_reason = ''
-                  AND attempt_count < max_attempts
-                  AND scheduled_at <= CURRENT_TIMESTAMP
-                  AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-                  AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
-                  {type_filter}
-                  {test_filter}
-                ORDER BY priority ASC, scheduled_at ASC, id ASC
-                LIMIT :limit
-                FOR UPDATE SKIP LOCKED
-            )
-            UPDATE external_effect_job j
-            SET status = 'dispatching',
-                lease_token = CAST(:lease_prefix AS text) || '-' || j.id::text,
-                lease_expires_at = CURRENT_TIMESTAMP + (:lease_seconds * INTERVAL '1 second'),
-                dispatch_started_at = CURRENT_TIMESTAMP,
-                provider_call_started_at = NULL,
-                locked_at = CURRENT_TIMESTAMP,
-                locked_by = :locked_by,
-                row_version = row_version + 1,
-                updated_at = CURRENT_TIMESTAMP
-            FROM due
-            WHERE j.id = due.id
-            RETURNING j.*
-            """,
-            params,
-        )
-        return [job for row in rows if (job := _public_job(row)) is not None]
-
-    def acquire_job(self, job_id: int, *, locked_by: str, lease_seconds: int = 300) -> ExternalEffectJob | None:
-        lease_prefix = "eel_" + uuid4().hex
-        row = self._write_one(
-            """
-            UPDATE external_effect_job
-            SET status = 'dispatching',
-                lease_token = :lease_token,
-                lease_expires_at = CURRENT_TIMESTAMP + (:lease_seconds * INTERVAL '1 second'),
-                dispatch_started_at = CURRENT_TIMESTAMP,
-                provider_call_started_at = NULL,
-                locked_at = CURRENT_TIMESTAMP,
-                locked_by = :locked_by,
-                row_version = row_version + 1,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :job_id
-              AND hold_reason = ''
-              AND status IN ('queued', 'failed_retryable')
-              AND attempt_count < max_attempts
-              AND scheduled_at <= CURRENT_TIMESTAMP
-              AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-              AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
-            RETURNING *
-            """,
-            {
-                "job_id": int(job_id),
-                "locked_by": _text(locked_by),
-                "lease_token": f"{lease_prefix}-{int(job_id)}",
-                "lease_seconds": max(30, min(int(lease_seconds or 300), 3600)),
-            },
-        )
-        return _public_job(row)
-
     def get_active_claim(self, job_id: int, *, lease_token: str) -> ExternalEffectJob | None:
         return _public_job(self._one(
                 """
@@ -533,6 +428,25 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
 
     def quarantine_stale_dispatching(self) -> int:
         with self._session_factory() as session:
+            control = session.execute(
+                text(
+                    """
+                    SELECT claim_enabled, active_generation
+                    FROM queue_runtime_control
+                    WHERE singleton = TRUE
+                    FOR SHARE
+                    """
+                )
+            ).mappings().fetchone()
+            if (
+                not control
+                or (
+                    bool(control.get("claim_enabled"))
+                    and int(control.get("active_generation") or 0) > 0
+                )
+            ):
+                session.rollback()
+                return 0
             stale_rows = session.execute(text(
                     """
                         SELECT job.id, job.last_attempt_id, job.lease_token,

@@ -348,25 +348,35 @@ def _freeze_jobs(
     database_url: str,
     *,
     job_ids: list[int],
+    event_log_id: int,
 ) -> None:
     if len(job_ids) != 3 or len(set(job_ids)) != 3 or any(job_id <= 0 for job_id in job_ids):
         raise CallbackCanaryError("callback did not produce exactly three durable jobs")
+    if int(event_log_id or 0) <= 0:
+        raise CallbackCanaryError("callback did not expose one durable relationship event")
     with open_runtime_connection(database_url) as connection:
         with connection.transaction():
             rows = connection.execute(
                 """
-                SELECT id
+                SELECT id, source_event_id, status, attempt_count,
+                       provider_call_started_at, cancel_requested_at
                 FROM external_effect_job
                 WHERE id = ANY(%s)
-                  AND status IN ('planned', 'approved', 'queued', 'blocked')
-                  AND attempt_count = 0
-                  AND provider_call_started_at IS NULL
-                  AND cancel_requested_at IS NULL
                 FOR UPDATE
                 """,
                 (job_ids,),
             ).fetchall()
             if {int(row["id"]) for row in rows} != set(job_ids):
+                raise CallbackCanaryError("callback job links are incomplete")
+            if any(str(row.get("source_event_id") or "") != str(int(event_log_id)) for row in rows):
+                raise CallbackCanaryError("callback summary referenced a historical relationship job")
+            if any(
+                str(row.get("status") or "") not in {"planned", "approved", "queued", "blocked"}
+                or int(row.get("attempt_count") or 0) != 0
+                or row.get("provider_call_started_at") is not None
+                or row.get("cancel_requested_at") is not None
+                for row in rows
+            ):
                 raise CallbackCanaryError("one or more callback jobs crossed the provider boundary before authorization")
             updated = connection.execute(
                 """
@@ -375,9 +385,10 @@ def _freeze_jobs(
                     row_version = row_version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ANY(%s)
+                  AND source_event_id = %s
                 RETURNING id
                 """,
-                (job_ids,),
+                (job_ids, str(int(event_log_id))),
             ).fetchall()
             if {int(row["id"]) for row in updated} != set(job_ids):
                 raise CallbackCanaryError("callback jobs could not be frozen to one attempt")
@@ -578,7 +589,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     summary = dict(inbox.get("processing_summary_json") or {})
     job_ids = [int(value or 0) for value in summary.get("external_effect_job_ids") or []]
-    _freeze_jobs(database_url, job_ids=job_ids)
+    _freeze_jobs(
+        database_url,
+        job_ids=job_ids,
+        event_log_id=int(summary.get("event_log_id") or 0),
+    )
     callback_identity = {
         "baseline_id": baseline_id,
         "inbox_id": int(inbox["id"]),

@@ -5,6 +5,9 @@ from typing import Any, Callable
 
 from aicrm_next.shared.runtime import raw_database_url
 from aicrm_next.platform_foundation.execution_runtime.read_model import queue_policy_eligible_predicate
+from aicrm_next.platform_foundation.execution_runtime.repository import (
+    external_canary_authorization_predicate,
+)
 
 
 def _psycopg_url(url: str) -> str:
@@ -88,6 +91,7 @@ class RuntimeReadinessRepository:
                 params["allowed_consumers"] = list(allowed_consumers)
             actionable_predicate = " AND ".join(predicates) if predicates else "TRUE"
         eligible_predicate = queue_policy_eligible_predicate()
+        external_canary_authorized = external_canary_authorization_predicate(row_alias="j")
         row = self._execute(
             f"""
             WITH internal_rows AS (
@@ -115,6 +119,7 @@ class RuntimeReadinessRepository:
                 i.status IN ('dead_letter', 'failed_terminal') AS dlq_state,
                 FALSE AS rate_limited,
                 ''::text AS execution_scope,
+                TRUE AS canary_authorized,
                 EXISTS (
                   SELECT 1 FROM webhook_inbox active
                   WHERE active.id <> i.id AND active.lane = i.lane
@@ -134,7 +139,7 @@ class RuntimeReadinessRepository:
                 r.worker_generation, r.policy_version,
                 r.status IN ('pending', 'failed_retryable'),
                 r.status = 'running', FALSE,
-                r.status IN ('failed_terminal', 'blocked'), FALSE, '',
+                r.status IN ('failed_terminal', 'blocked'), FALSE, '', TRUE,
                 EXISTS (
                   SELECT 1 FROM internal_event_consumer_run active
                   WHERE active.id <> r.id AND active.lane = r.lane
@@ -153,7 +158,7 @@ class RuntimeReadinessRepository:
                 o.available_at, o.lease_expires_at, o.attempt_count, o.max_attempts,
                 o.worker_generation, o.policy_version,
                 o.status IN ('pending', 'failed_retryable'),
-                o.status = 'running', FALSE, o.status = 'failed_terminal', FALSE, '',
+                o.status = 'running', FALSE, o.status = 'failed_terminal', FALSE, '', TRUE,
                 EXISTS (
                   SELECT 1 FROM internal_event_outbox active
                   WHERE active.id <> o.id AND active.lane = o.lane
@@ -181,6 +186,7 @@ class RuntimeReadinessRepository:
                     AND cooldown.blocked_until > CURRENT_TIMESTAMP
                 ),
                 COALESCE(j.payload_json->>'execution_scope', ''),
+                ({external_canary_authorized}),
                 EXISTS (
                   SELECT 1 FROM external_effect_job active
                   WHERE active.id <> j.id AND active.lane = j.lane

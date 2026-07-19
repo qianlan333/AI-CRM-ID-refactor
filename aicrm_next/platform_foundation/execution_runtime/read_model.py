@@ -10,7 +10,12 @@ from aicrm_next.shared.release import current_release_sha
 from aicrm_next.shared.runtime import raw_database_url
 from aicrm_next.shared.sensitive_data import redact_sensitive_data
 
-from .repository import _default_connect, _psycopg_url, external_claim_scope_predicate
+from .repository import (
+    _default_connect,
+    _psycopg_url,
+    external_canary_authorization_predicate,
+    external_claim_scope_predicate,
+)
 
 
 PROVENANCE_PATH = Path("/home/ubuntu/.aicrm-releases/id-validation.json")
@@ -58,6 +63,7 @@ def queue_policy_external_scope_predicate(
         row_alias=row_alias,
         scope_expression=f"{control_alias}.external_claim_scope",
         execution_scope_expression=f"{row_alias}.execution_scope",
+        canary_authorized_expression=f"{row_alias}.canary_authorized",
     )
     return f"({row_alias}.queue_kind <> 'external_effect' OR {external_scope})"
 
@@ -334,12 +340,15 @@ class ExecutionRuntimeReadModel:
             row_alias="rows",
             scope_expression="control.external_claim_scope",
             execution_scope_expression="rows.execution_scope",
+            canary_authorized_expression="rows.canary_authorized",
         )
+        external_canary_authorized = external_canary_authorization_predicate(row_alias="job")
         eligible = queue_policy_eligible_predicate()
         return f"""
             WITH queue_rows AS (
                 SELECT 'external_effect'::TEXT AS queue_kind,
                        COALESCE(job.payload_json->>'execution_scope', '') AS execution_scope,
+                       ({external_canary_authorized}) AS canary_authorized,
                        job.lane, job.status, job.hold_reason, job.available_at,
                        job.lease_expires_at, job.attempt_count, job.max_attempts,
                        job.worker_generation, job.policy_version,
@@ -369,7 +378,7 @@ class ExecutionRuntimeReadModel:
                     'failed_terminal', 'blocked'
                 )
                 UNION ALL
-                SELECT 'internal_event', '', lane, status, hold_reason, available_at, lease_expires_at,
+                SELECT 'internal_event', '', TRUE, lane, status, hold_reason, available_at, lease_expires_at,
                        attempt_count, max_attempts, worker_generation, policy_version,
                        status IN ('pending', 'failed_retryable'),
                        status = 'running', FALSE,
@@ -390,7 +399,7 @@ class ExecutionRuntimeReadModel:
                     'failed_terminal', 'blocked'
                 )
                 UNION ALL
-                SELECT 'internal_outbox', '', lane, status, hold_reason, available_at, lease_expires_at,
+                SELECT 'internal_outbox', '', TRUE, lane, status, hold_reason, available_at, lease_expires_at,
                        attempt_count, max_attempts, worker_generation, policy_version,
                        status IN ('pending', 'failed_retryable'),
                        status = 'running', FALSE,
@@ -410,7 +419,7 @@ class ExecutionRuntimeReadModel:
                     'pending', 'running', 'failed_retryable', 'failed_terminal'
                 )
                 UNION ALL
-                SELECT 'webhook_inbox', '', lane, status, hold_reason, available_at, lease_expires_at,
+                SELECT 'webhook_inbox', '', TRUE, lane, status, hold_reason, available_at, lease_expires_at,
                        attempt_count, max_attempts, worker_generation, policy_version,
                        status IN ('received', 'failed_retryable'),
                        status = 'processing', FALSE,

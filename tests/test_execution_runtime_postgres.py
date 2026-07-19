@@ -24,6 +24,7 @@ from aicrm_next.platform_foundation.execution_runtime.repository import (
 from aicrm_next.platform_foundation.execution_runtime.validation import _lost_lease_count
 from aicrm_next.platform_foundation.repository import RuntimeReadinessRepository
 from aicrm_next.platform_foundation.external_effects.models import (
+    WECOM_CONTACT_TAG_MARK,
     ExternalEffectCreateRequest,
     ExternalEffectDispatchResult,
 )
@@ -31,6 +32,7 @@ from aicrm_next.platform_foundation.external_effects.repo import (
     SQLAlchemyExternalEffectRepository,
 )
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.platform_foundation.external_effects.worker import ExternalEffectWorker
 from aicrm_next.platform_foundation.external_effects.transactional import (
     enqueue_transactional_external_effect_job,
 )
@@ -193,6 +195,147 @@ def test_generation_and_standby_gate_are_fail_closed() -> None:
     assert claim is not None
     assert claim.item_id == job["id"]
     assert claim.worker_generation == 7
+
+
+def test_allowlisted_canary_requires_durable_cas_authorization(monkeypatch) -> None:
+    monkeypatch.setenv("AICRM_WECOM_PROVIDER_TARGET_POLICY", "allowlisted_canary")
+    monkeypatch.setenv(
+        "AICRM_EXTERNAL_EFFECT_ALLOWED_TARGET_EXTERNAL_USERIDS",
+        "wm-runtime-canary",
+    )
+    monkeypatch.setenv(
+        "AICRM_EXTERNAL_EFFECT_ALLOWED_OWNER_USERIDS",
+        "owner-runtime-canary",
+    )
+    repository = SQLAlchemyExternalEffectRepository(get_session_factory(_database_url()))
+    service = ExternalEffectService(repository)
+    planned = service.plan_effect(
+        effect_type=WECOM_CONTACT_TAG_MARK,
+        adapter_name="wecom_tag",
+        operation="mark",
+        target_type="external_userid",
+        target_id="wm-runtime-canary",
+        business_type="runtime_test",
+        business_id=uuid4().hex,
+        payload={
+            "external_userid": "wm-runtime-canary",
+            "follow_user_userid": "owner-runtime-canary",
+            "add_tags": ["tag-runtime-canary"],
+            "remove_tags": [],
+        },
+        idempotency_key=f"runtime-canary-{uuid4().hex}",
+        status="queued",
+        lane="wecom_interactive",
+    )
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE queue_runtime_control
+            SET external_claim_scope = 'allowlisted'
+            WHERE singleton = TRUE
+            """
+        )
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET payload_json = jsonb_set(
+                    payload_json,
+                    '{execution_scope}',
+                    to_jsonb('allowlisted_canary'::text),
+                    TRUE
+                ),
+                payload_summary_json = jsonb_set(
+                    payload_summary_json,
+                    '{canary_authorization}',
+                    '{"actor":"forged","reason":"forged","authorized_at":"forged","authorized_job_id":"not-a-number","authorized_from_version":"not-a-number","duplicate_risk_confirmed":false}'::jsonb,
+                    TRUE
+                )
+            WHERE id = %s
+            """,
+            (planned["id"],),
+        )
+    _enable(generation=7, wecom_interactive=1)
+
+    runtime = ExecutionRuntimeRepository(_database_url())
+    before = {
+        item["lane"]: item
+        for item in ExecutionRuntimeReadModel(_database_url()).runtime_snapshot()["lanes"]
+    }
+    assert before["wecom_interactive"]["eligible"] == 0
+    assert before["wecom_interactive"]["policy_gated"] == 1
+    assert runtime.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="forged-canary",
+        generation=7,
+    ) is None
+
+    current = repository.get_job(planned["id"])
+    assert current is not None
+    authorized = service.authorize_allowlisted_canary(
+        planned["id"],
+        actor="pytest",
+        reason="durable runtime canary authorization",
+        expected_version=current.row_version,
+    )
+    assert authorized is not None
+
+    after = {
+        item["lane"]: item
+        for item in ExecutionRuntimeReadModel(_database_url()).runtime_snapshot()["lanes"]
+    }
+    assert after["wecom_interactive"]["eligible"] == 1
+    claim = runtime.claim_external_effect_one(
+        lane="wecom_interactive",
+        worker_id="authorized-canary",
+        generation=7,
+    )
+    assert claim is not None
+    assert claim.item_id == planned["id"]
+
+
+def test_active_runtime_disables_every_direct_external_effect_owner() -> None:
+    job = _job()
+    repository = SQLAlchemyExternalEffectRepository(get_session_factory(_database_url()))
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET status = 'dispatching',
+                lease_token = 'stale-direct-owner',
+                lease_expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second',
+                locked_by = 'legacy-worker'
+            WHERE id = %s
+            """,
+            (job["id"],),
+        )
+    queued = _job()
+    _enable(generation=7, wecom_interactive=1)
+
+    assert repository.direct_claims_allowed() is False
+    assert repository.list_due_jobs(limit=10) == []
+    assert repository.acquire_due_jobs(limit=10, locked_by="legacy-worker") == []
+    assert repository.acquire_job(queued["id"], locked_by="legacy-worker") is None
+    assert repository.quarantine_stale_dispatching() == 0
+    worker_result = ExternalEffectWorker(repository).run_due(
+        batch_size=10,
+        dry_run=False,
+    )
+    assert worker_result["ok"] is True
+    assert worker_result["owner_disabled"] is True
+    assert worker_result["reason"] == "postgres_queue_runtime_is_active"
+    with _connect() as connection:
+        stale = connection.execute(
+            "SELECT status, lease_token FROM external_effect_job WHERE id = %s",
+            (job["id"],),
+        ).fetchone()
+        waiting = connection.execute(
+            "SELECT status, lease_token FROM external_effect_job WHERE id = %s",
+            (queued["id"],),
+        ).fetchone()
+    assert stale["status"] == "dispatching"
+    assert stale["lease_token"] == "stale-direct-owner"
+    assert waiting["status"] == "queued"
+    assert waiting["lease_token"] == ""
 
 
 def test_generation_zero_cannot_be_enabled_for_runtime_claims() -> None:
