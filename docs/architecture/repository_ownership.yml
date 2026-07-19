@@ -652,6 +652,13 @@ repositories:
     table_reads: []
     table_writes:
       - external_effect_job
+  aicrm_next/platform_foundation/external_effects/direct_claim_repository.py:
+    capability_owner: aicrm_next.platform_foundation.external_effects
+    table_reads:
+      - external_effect_job
+      - queue_runtime_control
+    table_writes:
+      - external_effect_job
   aicrm_next/platform_foundation/external_effects/provider_result_repository.py:
     capability_owner: aicrm_next.platform_foundation.external_effects
     table_reads:

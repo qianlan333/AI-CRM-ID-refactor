@@ -1621,6 +1621,7 @@
       "name": "postgres_execution_runtime",
       "paths": [
         "aicrm_next/platform_foundation/execution_runtime/**",
+        "aicrm_next/platform_foundation/external_effects/direct_claim_repository.py",
         "aicrm_next/platform_foundation/external_effects/rate_limit.py",
         "deploy/aicrm-*-queue-runtime.service",
         "deploy/aicrm-queue-invariant-check.service",

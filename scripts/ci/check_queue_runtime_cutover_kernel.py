@@ -269,7 +269,7 @@ def collect_errors(root: Path = ROOT) -> list[str]:
             "_validate_external_execution_scope",
             "database test-loopback scope requires a test-only worker",
         ),
-        "aicrm_next/platform_foundation/external_effects/repo.py": (
+        "aicrm_next/platform_foundation/external_effects/direct_claim_repository.py": (
             "def direct_claims_allowed",
             "direct_owner AS MATERIALIZED",
             "control.claim_enabled",
