@@ -24,6 +24,7 @@ from aicrm_next.platform_foundation.execution_runtime.repository import (  # noq
 )
 from aicrm_next.platform_foundation.execution_runtime.validation import (  # noqa: E402
     evidence_type_for_effect,
+    mirrored_welcome_attestation_context,
     record_external_effect_evidence,
     resolve_external_effect_job_id,
     test_loopback_receipt_evidence,
@@ -65,6 +66,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--expected-policy-version", required=True)
     parser.add_argument("--actor", required=True)
     parser.add_argument("--reason", required=True)
+    parser.add_argument(
+        "--upstream-welcome-delivery-attested",
+        action="store_true",
+        default=False,
+    )
     parser.add_argument("--apply", action="store_true", default=False)
     parser.add_argument("--confirmation", default="")
     return parser.parse_args(argv)
@@ -105,6 +111,9 @@ def main(argv: list[str] | None = None) -> int:
         "policy_version": policy_version,
         "target_values_redacted": True,
         "real_external_call_executed": False,
+        "upstream_welcome_delivery_attested": bool(
+            args.upstream_welcome_delivery_attested
+        ),
     }
     if not args.apply:
         print(json.dumps(plan, ensure_ascii=False, sort_keys=True))
@@ -140,6 +149,10 @@ def main(argv: list[str] | None = None) -> int:
     evidence_type = str(args.evidence_type or evidence_type_for_effect(job.effect_type)).strip()
     if evidence_type not in EXTERNAL_EVIDENCE_TYPES:
         raise RuntimeError("job effect type does not map to supported validation evidence")
+    if args.upstream_welcome_delivery_attested and evidence_type != "wecom_welcome":
+        raise RuntimeError(
+            "upstream welcome delivery attestation is only valid for wecom_welcome"
+        )
 
     extra: dict[str, object] = {}
     if evidence_type == "test_loopback":
@@ -152,6 +165,22 @@ def main(argv: list[str] | None = None) -> int:
         gate_error = wecom_canary_job_gate_error(job)
         if gate_error:
             extra["provider_policy_gate_error"] = gate_error
+        if args.upstream_welcome_delivery_attested:
+            extra.update(
+                mirrored_welcome_attestation_context(
+                    database_url,
+                    job_id=job_id,
+                    release_sha=release_sha,
+                    generation=int(args.generation),
+                    policy_version=policy_version,
+                )
+            )
+            extra.update(
+                {
+                    "upstream_welcome_delivery_attested": True,
+                    "upstream_welcome_attestation_kind": "operator_observed_delivery",
+                }
+            )
 
     result = record_external_effect_evidence(
         database_url,

@@ -84,6 +84,11 @@ on:
         required: false
         default: private,group,contact_detail,media,profile
         type: string
+      upstream_welcome_delivery_attested:
+        description: Operator confirmed production delivered the mirrored one-time welcome
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -434,6 +439,7 @@ jobs:
       QUEUE_EXPECTED_VERSION: ${{ inputs.expected_version }}
       QUEUE_EVIDENCE_TYPE: ${{ inputs.evidence_type }}
       QUEUE_CANARY_SCENARIOS: ${{ inputs.canary_scenarios }}
+      QUEUE_UPSTREAM_WELCOME_DELIVERY_ATTESTED: ${{ inputs.upstream_welcome_delivery_attested }}
       OPERATOR_ACTOR: ${{ github.actor }}
       OPERATION_RUN_ID: ${{ github.run_id }}
       OPERATION_RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -495,7 +501,7 @@ jobs:
           key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
           fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
           command_timeout: 20m
-          envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,PUBLIC_BASE_URL,PUBLIC_HEALTH_URL,EXPECTED_RELEASE_SHA,QUEUE_OPERATION,QUEUE_EXPECTED_GENERATION,QUEUE_GENERATION,QUEUE_POLICY_VERSION,QUEUE_TARGET_POLICY_VERSION,QUEUE_RUN_ID,QUEUE_EXECUTION_ID,QUEUE_JOB_ID,QUEUE_EXPECTED_VERSION,QUEUE_EVIDENCE_TYPE,QUEUE_CANARY_SCENARIOS,OPERATOR_ACTOR,OPERATION_RUN_ID,OPERATION_RUN_ATTEMPT
+          envs: EXPECTED_REPOSITORY,DEPLOY_TARGET,PUBLIC_BASE_URL,PUBLIC_HEALTH_URL,EXPECTED_RELEASE_SHA,QUEUE_OPERATION,QUEUE_EXPECTED_GENERATION,QUEUE_GENERATION,QUEUE_POLICY_VERSION,QUEUE_TARGET_POLICY_VERSION,QUEUE_RUN_ID,QUEUE_EXECUTION_ID,QUEUE_JOB_ID,QUEUE_EXPECTED_VERSION,QUEUE_EVIDENCE_TYPE,QUEUE_CANARY_SCENARIOS,QUEUE_UPSTREAM_WELCOME_DELIVERY_ATTESTED,OPERATOR_ACTOR,OPERATION_RUN_ID,OPERATION_RUN_ATTEMPT
           script_path: scripts/ops/run_id_validation_queue_operation.sh
 
       - name: Execute guarded canary-spec queue operation on 49

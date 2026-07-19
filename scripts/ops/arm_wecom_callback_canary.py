@@ -516,6 +516,30 @@ def wait_for_result(
         sleep(0.1)
 
 
+def _callback_evidence_state(
+    evidence: list[dict[str, Any]],
+) -> tuple[bool, bool, bool]:
+    by_type = {str(item.get("evidence_type") or ""): item for item in evidence}
+    expected_types = {"wecom_welcome", "wecom_tag", "wecom_contact_detail"}
+    if len(evidence) != 3 or set(by_type) != expected_types:
+        raise CallbackCanaryError("callback evidence set is not exact")
+    welcome = by_type["wecom_welcome"]
+    welcome_attestation_required = bool(
+        welcome.get("status") == "failed"
+        and welcome.get("upstream_welcome_attestation_eligible") is True
+    )
+    evidence_complete = all(item.get("status") == "passed" for item in evidence)
+    operation_ok = all(
+        item.get("status") == "passed"
+        or (
+            item.get("evidence_type") == "wecom_welcome"
+            and welcome_attestation_required
+        )
+        for item in evidence
+    )
+    return operation_ok, evidence_complete, welcome_attestation_required
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     release_sha = str(args.expected_release_sha or "").strip()
@@ -666,7 +690,9 @@ def main(argv: list[str] | None = None) -> int:
                 },
             )
         )
-    ok = all(item["status"] == "passed" for item in evidence)
+    ok, evidence_complete, welcome_attestation_required = _callback_evidence_state(
+        evidence
+    )
     received_at = _utc_datetime(inbox["received_at"])
     result = {
         **plan,
@@ -678,6 +704,17 @@ def main(argv: list[str] | None = None) -> int:
         "ingress_to_provider_boundary_ms": int((boundary_time - received_at).total_seconds() * 1000),
         "job_count": len(job_ids),
         "evidence": evidence,
+        "validation_evidence_complete": evidence_complete,
+        "welcome_attestation_required": welcome_attestation_required,
+        "welcome_execution_id": str(
+            next(
+                final_job.execution_id
+                for kind, final_job, _attempts in completed_jobs
+                if kind == "welcome"
+            )
+            or ""
+        ),
+        "welcome_job_id": int(jobs["welcome"].id),
         "real_external_call_executed": any(bool(item.get("side_effect_executed")) for item in evidence),
     }
     print(json.dumps(result, sort_keys=True))

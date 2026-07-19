@@ -282,6 +282,159 @@ def test_external_effect_evidence_exposes_only_stable_redacted_failure_diagnosti
     assert "must-not-appear" not in serialized
 
 
+def test_mirrored_welcome_41050_requires_exact_operator_delivery_attestation(
+    monkeypatch,
+) -> None:
+    connection = _EvidenceConnection()
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.normalize_runtime_database_url",
+        lambda value: value,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.open_runtime_connection",
+        lambda _value: connection,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.wecom_canary_job_gate_error",
+        lambda _job: "",
+    )
+    job = ExternalEffectJob(
+        id=94,
+        effect_type="wecom.welcome_message.send",
+        execution_id="exe_mirrored_welcome",
+        payload_json={"execution_scope": "allowlisted_canary"},
+        status="failed_terminal",
+        policy_version="queue-v2-allowlisted",
+        worker_generation=17,
+        provider_call_started_at="2026-07-19T15:10:27Z",
+        side_effect_executed=True,
+        provider_result_received=True,
+        attempt_count=1,
+        last_error_code="wecom_error_41050",
+    )
+    attempts = [
+        ExternalEffectAttempt(
+            job_id=94,
+            adapter_mode="execute",
+            provider_call_started_at="2026-07-19T15:10:27Z",
+            worker_generation=17,
+            status="failed_terminal",
+            error_code="wecom_error_41050",
+            response_summary_json={
+                "adapter_mode": "execute",
+                "provider_error_classification": "terminal",
+                "errcode": 41050,
+                "blocked": False,
+            },
+        )
+    ]
+    callback_proof = {
+        "source_webhook_inbox_id": 3810,
+        "callback_duplicate_count": 0,
+        "callback_to_provider_boundary_ms": 1948,
+    }
+
+    pending = record_external_effect_evidence(
+        "postgresql://runtime",
+        job=job,
+        attempts=attempts,
+        release_sha="a" * 40,
+        generation=17,
+        policy_version="queue-v2-allowlisted",
+        actor="pytest",
+        reason="mirrored welcome provider result",
+        extra_evidence=callback_proof,
+    )
+    attested = record_external_effect_evidence(
+        "postgresql://runtime",
+        job=job,
+        attempts=attempts,
+        release_sha="a" * 40,
+        generation=17,
+        policy_version="queue-v2-allowlisted",
+        actor="pytest",
+        reason="operator observed production welcome delivery",
+        extra_evidence={
+            **callback_proof,
+            "upstream_welcome_delivery_attested": True,
+        },
+    )
+
+    assert pending["status"] == "failed"
+    assert pending["upstream_welcome_attestation_eligible"] is True
+    assert pending["upstream_welcome_delivery_attested"] is False
+    assert attested["status"] == "passed"
+    assert attested["delivery_proof_mode"] == "upstream_operator_attested"
+
+
+def test_mirrored_welcome_attestation_stays_failed_outside_exact_safety_window(
+    monkeypatch,
+) -> None:
+    connection = _EvidenceConnection()
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.normalize_runtime_database_url",
+        lambda value: value,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.open_runtime_connection",
+        lambda _value: connection,
+    )
+    monkeypatch.setattr(
+        "aicrm_next.platform_foundation.execution_runtime.validation.wecom_canary_job_gate_error",
+        lambda _job: "",
+    )
+    job = ExternalEffectJob(
+        id=95,
+        effect_type="wecom.welcome_message.send",
+        execution_id="exe_late_welcome",
+        payload_json={"execution_scope": "allowlisted_canary"},
+        status="failed_terminal",
+        policy_version="queue-v2-allowlisted",
+        worker_generation=17,
+        provider_call_started_at="2026-07-19T15:10:27Z",
+        side_effect_executed=True,
+        provider_result_received=True,
+        attempt_count=1,
+        last_error_code="wecom_error_41050",
+    )
+    attempts = [
+        ExternalEffectAttempt(
+            job_id=95,
+            adapter_mode="execute",
+            provider_call_started_at="2026-07-19T15:10:27Z",
+            worker_generation=17,
+            status="failed_terminal",
+            error_code="wecom_error_41050",
+            response_summary_json={
+                "adapter_mode": "execute",
+                "provider_error_classification": "terminal",
+                "errcode": 41050,
+                "blocked": False,
+            },
+        )
+    ]
+
+    result = record_external_effect_evidence(
+        "postgresql://runtime",
+        job=job,
+        attempts=attempts,
+        release_sha="a" * 40,
+        generation=17,
+        policy_version="queue-v2-allowlisted",
+        actor="pytest",
+        reason="late welcome must fail closed",
+        extra_evidence={
+            "source_webhook_inbox_id": 3811,
+            "callback_duplicate_count": 0,
+            "callback_to_provider_boundary_ms": 20_000,
+            "upstream_welcome_delivery_attested": True,
+        },
+    )
+
+    assert result["status"] == "failed"
+    assert result["upstream_welcome_attestation_eligible"] is False
+
+
 def test_loopback_evidence_requires_exact_signed_receipt_and_policy(
     monkeypatch,
 ) -> None:

@@ -327,6 +327,28 @@ def test_job_map_requires_exact_welcome_tag_and_detail_payloads(
         )
 
 
+def test_callback_evidence_state_requires_operator_attestation_only_for_exact_consumed_welcome() -> None:
+    evidence = [
+        {
+            "evidence_type": "wecom_welcome",
+            "status": "failed",
+            "upstream_welcome_attestation_eligible": True,
+        },
+        {"evidence_type": "wecom_tag", "status": "passed"},
+        {"evidence_type": "wecom_contact_detail", "status": "passed"},
+    ]
+
+    assert arm._callback_evidence_state(evidence) == (True, False, True)
+
+    evidence[0]["upstream_welcome_attestation_eligible"] = False
+    assert arm._callback_evidence_state(evidence) == (False, False, False)
+
+    evidence[0].update(
+        {"status": "passed", "upstream_welcome_attestation_eligible": False}
+    )
+    assert arm._callback_evidence_state(evidence) == (True, True, False)
+
+
 def test_apply_authorizes_welcome_before_other_effects_and_records_all_evidence(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -406,6 +428,11 @@ def test_apply_authorizes_welcome_before_other_effects_and_records_all_evidence(
         "record_external_effect_evidence",
         lambda _url, *, job, **_kwargs: {
             "job_id": job.id,
+            "evidence_type": {
+                "wecom.welcome_message.send": "wecom_welcome",
+                "wecom.contact.tag.mark": "wecom_tag",
+                "wecom.external_contact.detail.fetch": "wecom_contact_detail",
+            }[job.effect_type],
             "status": "passed",
             "side_effect_executed": True,
         },
