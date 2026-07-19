@@ -208,6 +208,16 @@ def _rate_scope_key(request: ExternalEffectCreateRequest) -> str:
 
 
 class ExternalEffectRepository:
+    def direct_claims_allowed(self) -> bool:
+        """Whether the pre-runtime worker may own claims in this repository.
+
+        In-memory repositories have no generation-control table and keep their
+        unit-test semantics.  The PostgreSQL repository overrides this with a
+        fail-closed durable owner gate.
+        """
+
+        return True
+
     def create_job(self, request: ExternalEffectCreateRequest) -> ExternalEffectJob:
         raise NotImplementedError
 

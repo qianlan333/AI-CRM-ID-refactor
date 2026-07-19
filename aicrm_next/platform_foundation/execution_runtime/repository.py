@@ -43,11 +43,46 @@ def open_listener_connection(url: str, *, autocommit: bool, application_name: st
     )
 
 
+def external_canary_authorization_predicate(*, row_alias: str = "job") -> str:
+    """Return the durable SQL proof required by an allowlisted canary row."""
+
+    authorization = f"COALESCE({row_alias}.payload_summary_json, '{{}}'::jsonb)->'canary_authorization'"
+    authorized_job_id = f"""
+        CASE
+            WHEN jsonb_typeof({authorization}->'authorized_job_id') = 'number'
+             AND ({authorization}->>'authorized_job_id') ~ '^[1-9][0-9]*$'
+            THEN ({authorization}->>'authorized_job_id')::numeric
+            ELSE 0::numeric
+        END
+    """
+    authorized_from_version = f"""
+        CASE
+            WHEN jsonb_typeof({authorization}->'authorized_from_version') = 'number'
+             AND ({authorization}->>'authorized_from_version') ~ '^[1-9][0-9]*$'
+            THEN ({authorization}->>'authorized_from_version')::numeric
+            ELSE 0::numeric
+        END
+    """
+    return f"""
+        (
+            jsonb_typeof({authorization}) = 'object'
+            AND COALESCE({authorization}->>'actor', '') <> ''
+            AND COALESCE({authorization}->>'reason', '') <> ''
+            AND COALESCE({authorization}->>'authorized_at', '') <> ''
+            AND ({authorized_job_id}) = {row_alias}.id::numeric
+            AND ({authorized_from_version}) >= 1::numeric
+            AND {row_alias}.row_version::numeric >= ({authorized_from_version}) + 1::numeric
+            AND {authorization}->'duplicate_risk_confirmed' = 'false'::jsonb
+        )
+    """
+
+
 def external_claim_scope_predicate(
     *,
     row_alias: str = "job",
     scope_expression: str = "control.external_claim_scope",
     execution_scope_expression: str | None = None,
+    canary_authorized_expression: str | None = None,
 ) -> str:
     """Return the canonical SQL gate for external-effect execution scope.
 
@@ -56,16 +91,25 @@ def external_claim_scope_predicate(
     """
 
     execution_scope = execution_scope_expression or f"COALESCE({row_alias}.payload_json->>'execution_scope', '')"
+    canary_authorized = canary_authorized_expression or external_canary_authorization_predicate(
+        row_alias=row_alias
+    )
     return f"""
         (
-            {scope_expression} = 'all'
-            OR (
-                {scope_expression} = 'allowlisted'
-                AND {execution_scope} IN ('test_loopback', 'allowlisted_canary')
+            (
+                {execution_scope} <> 'allowlisted_canary'
+                OR ({canary_authorized})
             )
-            OR (
-                {scope_expression} = 'test_loopback'
-                AND {execution_scope} = 'test_loopback'
+            AND (
+                {scope_expression} = 'all'
+                OR (
+                    {scope_expression} = 'allowlisted'
+                    AND {execution_scope} IN ('test_loopback', 'allowlisted_canary')
+                )
+                OR (
+                    {scope_expression} = 'test_loopback'
+                    AND {execution_scope} = 'test_loopback'
+                )
             )
         )
     """

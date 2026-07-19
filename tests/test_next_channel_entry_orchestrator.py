@@ -169,6 +169,42 @@ def test_entry_without_unionid_still_queues_external_userid_effects(monkeypatch)
     assert "target_unionid" not in tag_jobs[0].payload_json
 
 
+def test_tag_idempotency_is_scoped_to_the_relationship_event(monkeypatch):
+    reset_external_effect_fixture_state()
+    _calls, previous = _patch_repo(monkeypatch)
+    monkeypatch.setattr("aicrm_next.channel_entry.application.wake_external_effect_job", lambda *args, **kwargs: False)
+
+    def enter(event_log_id: int):
+        return process_channel_entry(
+            ProcessChannelEntryCommand(
+                external_contact_id="wm-relationship-epoch",
+                follow_user_userid="sales",
+                payload_json={"corp_id": "ww-test", "State": "scene-a", "WelcomeCode": "wc"},
+                send_welcome_message=True,
+                event_log_id=event_log_id,
+            )
+        )
+
+    try:
+        first = enter(5101)
+        duplicate = enter(5101)
+        readded = enter(5102)
+    finally:
+        set_wecom_adapter(previous)
+
+    assert first["entry_tag"]["external_effect_job_id"] == duplicate["entry_tag"]["external_effect_job_id"]
+    assert readded["entry_tag"]["external_effect_job_id"] != first["entry_tag"]["external_effect_job_id"]
+
+    tag_jobs, total = ExternalEffectService().list_jobs(
+        {"effect_type": WECOM_CONTACT_TAG_MARK, "target_id": "wm-relationship-epoch"},
+        limit=10,
+    )
+    assert total == 2
+    assert len(tag_jobs) == 2
+    assert len({job.idempotency_key for job in tag_jobs}) == 2
+    assert all("relationship_event:" in job.idempotency_key for job in tag_jobs)
+
+
 def test_channel_disabled_has_no_baseline_side_effects(monkeypatch):
     calls, previous = _patch_repo(monkeypatch, channel_status="inactive")
     try:

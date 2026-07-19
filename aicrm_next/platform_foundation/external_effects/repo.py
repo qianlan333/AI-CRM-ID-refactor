@@ -65,6 +65,15 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
             rows = session.execute(text(statement), params or {}).mappings().fetchall()
             session.commit()
             return [dict(row) for row in rows]
+    def direct_claims_allowed(self) -> bool:
+        row = self._one(
+            """
+            SELECT NOT (claim_enabled AND active_generation > 0) AS allowed
+            FROM queue_runtime_control
+            WHERE singleton = TRUE
+            """
+        )
+        return bool(row and row.get("allowed"))
     def create_job(self, request: ExternalEffectCreateRequest) -> ExternalEffectJob:
         key = _idempotency_key(request)
         scheduled_at = request.scheduled_at or utcnow()
@@ -421,6 +430,13 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
               AND scheduled_at <= CURRENT_TIMESTAMP
               AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
               AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM queue_runtime_control control
+                  WHERE control.singleton = TRUE
+                    AND control.claim_enabled
+                    AND control.active_generation > 0
+              )
               {type_filter}
               {test_filter}
             ORDER BY priority ASC, scheduled_at ASC, id ASC
@@ -451,20 +467,27 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
             params["effect_types"] = [_text(item) for item in effect_types if _text(item)]
         rows = self._write_all(
             f"""
-            WITH due AS (
-                SELECT id
-                FROM external_effect_job
-                WHERE status IN ('queued', 'failed_retryable')
-                  AND hold_reason = ''
-                  AND attempt_count < max_attempts
-                  AND scheduled_at <= CURRENT_TIMESTAMP
-                  AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
-                  AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+            WITH direct_owner AS MATERIALIZED (
+                SELECT singleton
+                FROM queue_runtime_control
+                WHERE singleton = TRUE
+                  AND NOT (claim_enabled AND active_generation > 0)
+                FOR SHARE
+            ), due AS (
+                SELECT job.id
+                FROM external_effect_job job
+                CROSS JOIN direct_owner
+                WHERE job.status IN ('queued', 'failed_retryable')
+                  AND job.hold_reason = ''
+                  AND job.attempt_count < job.max_attempts
+                  AND job.scheduled_at <= CURRENT_TIMESTAMP
+                  AND (job.next_retry_at IS NULL OR job.next_retry_at <= CURRENT_TIMESTAMP)
+                  AND (job.lease_expires_at IS NULL OR job.lease_expires_at <= CURRENT_TIMESTAMP)
                   {type_filter}
                   {test_filter}
-                ORDER BY priority ASC, scheduled_at ASC, id ASC
+                ORDER BY job.priority ASC, job.scheduled_at ASC, job.id ASC
                 LIMIT :limit
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE OF job SKIP LOCKED
             )
             UPDATE external_effect_job j
             SET status = 'dispatching',
@@ -488,6 +511,13 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
         lease_prefix = "eel_" + uuid4().hex
         row = self._write_one(
             """
+            WITH direct_owner AS MATERIALIZED (
+                SELECT singleton
+                FROM queue_runtime_control
+                WHERE singleton = TRUE
+                  AND NOT (claim_enabled AND active_generation > 0)
+                FOR SHARE
+            )
             UPDATE external_effect_job
             SET status = 'dispatching',
                 lease_token = :lease_token,
@@ -505,6 +535,7 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
               AND scheduled_at <= CURRENT_TIMESTAMP
               AND (next_retry_at IS NULL OR next_retry_at <= CURRENT_TIMESTAMP)
               AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)
+              AND EXISTS (SELECT 1 FROM direct_owner)
             RETURNING *
             """,
             {
@@ -533,6 +564,25 @@ class SQLAlchemyExternalEffectRepository(ExternalEffectCanaryAuthorizationReposi
 
     def quarantine_stale_dispatching(self) -> int:
         with self._session_factory() as session:
+            control = session.execute(
+                text(
+                    """
+                    SELECT claim_enabled, active_generation
+                    FROM queue_runtime_control
+                    WHERE singleton = TRUE
+                    FOR SHARE
+                    """
+                )
+            ).mappings().fetchone()
+            if (
+                not control
+                or (
+                    bool(control.get("claim_enabled"))
+                    and int(control.get("active_generation") or 0) > 0
+                )
+            ):
+                session.rollback()
+                return 0
             stale_rows = session.execute(text(
                     """
                         SELECT job.id, job.last_attempt_id, job.lease_token,

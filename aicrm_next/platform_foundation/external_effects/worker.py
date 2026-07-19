@@ -163,6 +163,19 @@ class ExternalEffectWorker:
                 "real_external_call_executed": False,
             }
 
+        if not self._repo.direct_claims_allowed():
+            return {
+                "ok": True,
+                "items": [],
+                "counts": self._empty_counts(),
+                "quarantined_stale_dispatching_count": 0,
+                "dry_run": False,
+                "test_only": bool(test_only),
+                "owner_disabled": True,
+                "reason": "postgres_queue_runtime_is_active",
+                "real_external_call_executed": False,
+            }
+
         quarantined_count = self._repo.quarantine_stale_dispatching()
         jobs = self._repo.acquire_due_jobs(
             limit=batch_size,

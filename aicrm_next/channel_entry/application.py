@@ -218,6 +218,18 @@ def _channel_entry_target(command: ProcessChannelEntryCommand) -> tuple[str, str
     return "external_userid", text(command.external_contact_id), {}
 
 
+def _relationship_epoch_key(command: ProcessChannelEntryCommand) -> str:
+    """Return the durable relationship event identity for effect deduplication.
+
+    WeCom retries of the same callback resolve to the same event-log row, while
+    deleting and re-adding a contact creates a new row.  Keep the historical
+    key shape for non-callback/manual commands that have no durable event row.
+    """
+
+    event_log_id = int(command.event_log_id or 0)
+    return f":relationship_event:{event_log_id}" if event_log_id > 0 else ""
+
+
 def _emit_channel_entry_internal_event(
     command: ProcessChannelEntryCommand,
     *,
@@ -726,7 +738,8 @@ def _apply_tag(
 ) -> dict[str, Any]:
     channel_id = int(channel.get("id") or 0)
     tag_id = text(channel.get("entry_tag_id"))
-    key = f"{extract_corp_id(command.payload_json)}:{command.external_contact_id}:{command.follow_user_userid}:{tag_id}:{channel_id}:tag"
+    relationship_epoch = _relationship_epoch_key(command)
+    key = f"{extract_corp_id(command.payload_json)}:{command.external_contact_id}:{command.follow_user_userid}:{tag_id}:{channel_id}{relationship_epoch}:tag"
     if not tag_id:
         result = {"attempted": False, "applied": False, "reason": "no_entry_tag_configured"}
         _log_effect(command, effect_type="entry_tag", idempotency_key=key, status="skipped", channel_id=channel_id, scene_value=scene, reason=result["reason"], response_json=result)
