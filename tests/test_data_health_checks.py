@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -331,8 +332,7 @@ def test_customer_360_freshness_guard_still_blocks_real_source_lag(monkeypatch) 
     assert result.evidence["identity_lag_minutes"] == checks.PROJECTION_FRESHNESS_MAX_MINUTES + 1
     assert result.evidence["refresh_age_minutes"] == 600
     assert result.evidence["violations"] == [
-        f"identity_lag_minutes={checks.PROJECTION_FRESHNESS_MAX_MINUTES + 1:.1f} "
-        f"exceeds {checks.PROJECTION_FRESHNESS_MAX_MINUTES}"
+        f"identity_lag_minutes={checks.PROJECTION_FRESHNESS_MAX_MINUTES + 1:.1f} exceeds {checks.PROJECTION_FRESHNESS_MAX_MINUTES}"
     ]
 
 
@@ -555,6 +555,7 @@ def test_external_effect_backlog_separates_only_strict_id_validation_canary_fail
             "canary_failed_retryable_count": 0,
             "canary_failed_terminal_count": 1,
             "canary_blocked_count": 1,
+            "callback_welcome_failed_terminal_count": 1,
         },
     )
 
@@ -565,6 +566,7 @@ def test_external_effect_backlog_separates_only_strict_id_validation_canary_fail
         "failed_retryable_count": 0,
         "failed_terminal_count": 1,
         "blocked_count": 1,
+        "callback_welcome_failed_terminal_count": 1,
         "excluded_from_business_health": True,
         "strict_provenance_required": True,
     }
@@ -585,6 +587,18 @@ def test_external_effect_backlog_separates_only_strict_id_validation_canary_fail
         "max_attempts",
     ):
         assert required_provenance in query
+
+    for callback_proof in (
+        "queue_runtime_validation_evidence",
+        "wecom.welcome_message.send",
+        "wecom_error_41050",
+        "source_webhook_inbox_id",
+        "callback_to_provider_boundary_ms",
+        "provider_attempt_count",
+        "provider_policy_gate_passed",
+        "target_values_redacted",
+    ):
+        assert callback_proof in query
 
 
 def test_external_effect_backlog_still_fails_for_ordinary_terminal_effect(monkeypatch) -> None:
@@ -610,6 +624,104 @@ def test_external_effect_backlog_still_fails_for_ordinary_terminal_effect(monkey
 
     assert result.status == "fail"
     assert result.evidence["failed_terminal_count"] == 1
+
+
+@pytest.mark.postgres
+def test_mirrored_welcome_validation_failure_is_excluded_only_with_append_only_proof(
+    next_pg_schema,
+) -> None:
+    import psycopg
+
+    from aicrm_next.data_health import checks
+
+    database_url = os.environ["DATABASE_URL"]
+    execution_id = "exe_data_health_mirrored_welcome"
+    policy_version = "queue-v2-allowlisted-data-health-test"
+    evidence = {
+        "job_status": "failed_terminal",
+        "job_error_code": "wecom_error_41050",
+        "execution_scope": "allowlisted_canary",
+        "attempt_count": 1,
+        "provider_attempt_count": 1,
+        "provider_attempt_status": "failed_terminal",
+        "provider_attempt_error_code": "wecom_error_41050",
+        "provider_adapter_mode": "execute",
+        "provider_error_classification": "terminal",
+        "provider_errcode": 41050,
+        "callback_duplicate_count": 0,
+        "source_webhook_inbox_id": 3810,
+        "callback_to_provider_boundary_ms": 1948,
+        "provider_boundary_started": True,
+        "provider_result_received": True,
+        "side_effect_executed": True,
+        "duplicate_provider_call_proof": True,
+        "worker_generation_matches": True,
+        "evidence_type_matches": True,
+        "job_policy_version_matches": True,
+        "policy_proof_valid": True,
+        "provider_policy_gate_passed": True,
+        "test_receipt_proof_valid": True,
+        "provider_blocked": False,
+        "target_values_redacted": True,
+        "error_messages_redacted": True,
+    }
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO external_effect_job (
+                    effect_type, adapter_name, operation, target_type, target_id,
+                    business_type, business_id, source_module, source_route,
+                    trace_id, request_id, idempotency_key, fairness_key,
+                    actor_id, actor_type, risk_level, execution_mode,
+                    execution_id, payload_json, status, attempt_count, max_attempts,
+                    last_error_code, side_effect_executed, provider_result_received,
+                    worker_generation, policy_version
+                ) VALUES (
+                    'wecom.welcome_message.send', 'wecom_welcome_message', 'send_welcome',
+                    'external_user', 'redacted', 'channel_entry', 'redacted',
+                    'aicrm_next.channel_entry', '/wecom/external-contact/callback',
+                    'redacted', 'redacted', 'redacted', 'channel_entry',
+                    'system', 'system', 'high', 'execute',
+                    %s, '{"execution_scope":"allowlisted_canary"}'::jsonb,
+                    'failed_terminal', 1, 3, 'wecom_error_41050', TRUE, TRUE, 1, %s
+                )
+                RETURNING id
+                """,
+                (execution_id, policy_version),
+            )
+            job_id = int(cursor.fetchone()[0])
+        connection.commit()
+
+    without_proof = checks._external_effect_failed_retryable_backlog()
+
+    assert without_proof.status == "fail"
+    assert without_proof.evidence["failed_terminal_count"] == 1
+
+    with psycopg.connect(database_url) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO queue_runtime_validation_evidence (
+                    evidence_id, evidence_type, release_sha, active_generation,
+                    policy_version, execution_id, job_id, status, evidence_json,
+                    actor, reason
+                ) VALUES (
+                    'qrve_data_health_mirrored_welcome', 'wecom_welcome', %s, 1,
+                    %s, %s, %s, 'failed', %s::jsonb,
+                    'github:data-health-test', 'guarded mirrored callback validation'
+                )
+                """,
+                ("0" * 40, policy_version, execution_id, job_id, json.dumps(evidence)),
+            )
+        connection.commit()
+
+    result = checks._external_effect_failed_retryable_backlog()
+
+    assert result.status == "ok"
+    assert result.evidence["failed_terminal_count"] == 0
+    assert result.evidence["id_validation_canary"]["failed_terminal_count"] == 1
+    assert result.evidence["id_validation_canary"]["callback_welcome_failed_terminal_count"] == 1
 
 
 def test_wecom_media_health_separates_exclusive_canary_failure_but_keeps_evidence(monkeypatch) -> None:
