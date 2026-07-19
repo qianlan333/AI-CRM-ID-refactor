@@ -15,6 +15,7 @@ from aicrm_next.shared.db_session import get_session_factory
 from tools.check_data_table_lifecycle import check_data_table_lifecycle
 
 from .dto import DataHealthCheckResult
+from .external_effect_provenance import callback_welcome_failure_sql, direct_canary_job_sql
 from .schema_drift import (
     database_schema_available,
     evaluate_schema_drift,
@@ -38,26 +39,6 @@ EXTERNAL_EFFECT_TERMINAL_LOOKBACK_HOURS = max(
 )
 QUESTIONNAIRE_CONTINUATION_CUTOVER_SQL = QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_SQL
 COMMERCE_CONTINUATION_CUTOVER_SQL = "TIMESTAMPTZ '2026-07-13 09:46:09+00'"
-
-
-def _id_validation_canary_job_sql(alias: str) -> str:
-    """Return the strict provenance predicate for dedicated ID-validation effects."""
-
-    return f"""
-        COALESCE({alias}.business_type, '') = 'id_validation_canary'
-        AND COALESCE({alias}.business_id, '') <> ''
-        AND COALESCE({alias}.source_module, '') = 'scripts.ops.plan_wecom_canary'
-        AND COALESCE({alias}.source_route, '') = 'scripts/ops/plan_wecom_canary.py'
-        AND COALESCE({alias}.trace_id, '') LIKE 'id-validation-canary:%'
-        AND COALESCE({alias}.request_id, '') = COALESCE({alias}.business_id, '')
-        AND COALESCE({alias}.idempotency_key, '') LIKE 'id-validation-canary:%'
-        AND COALESCE({alias}.fairness_key, '') = 'id_validation_canary'
-        AND COALESCE({alias}.actor_id, '') LIKE 'github:%'
-        AND COALESCE({alias}.actor_type, '') = 'operator'
-        AND COALESCE({alias}.risk_level, '') = 'high'
-        AND COALESCE({alias}.execution_mode, '') = 'execute'
-        AND {alias}.max_attempts = 1
-    """
 
 
 def run_all_checks() -> list[DataHealthCheckResult]:
@@ -664,7 +645,12 @@ def _external_effect_failed_retryable_backlog() -> DataHealthCheckResult:
                         f"""
                         WITH classified_jobs AS (
                             SELECT job.*,
-                                   ({_id_validation_canary_job_sql("job")}) AS id_validation_canary
+                                   (
+                                       ({direct_canary_job_sql("job")})
+                                       OR ({callback_welcome_failure_sql("job")})
+                                   ) AS id_validation_canary,
+                                   ({callback_welcome_failure_sql("job")})
+                                       AS id_validation_callback_welcome
                             FROM external_effect_job job
                         )
                         SELECT
@@ -705,7 +691,11 @@ def _external_effect_failed_retryable_backlog() -> DataHealthCheckResult:
                             ) AS canary_failed_terminal_count,
                             COUNT(*) FILTER (
                                 WHERE id_validation_canary AND status = 'blocked'
-                            ) AS canary_blocked_count
+                            ) AS canary_blocked_count,
+                            COUNT(*) FILTER (
+                                WHERE id_validation_callback_welcome
+                                  AND status = 'failed_terminal'
+                            ) AS callback_welcome_failed_terminal_count
                         FROM classified_jobs
                         """
                     )
@@ -735,6 +725,7 @@ def _external_effect_failed_retryable_backlog() -> DataHealthCheckResult:
     canary_failed_retryable_count = int(row.get("canary_failed_retryable_count") or 0)
     canary_failed_terminal_count = int(row.get("canary_failed_terminal_count") or 0)
     canary_blocked_count = int(row.get("canary_blocked_count") or 0)
+    callback_welcome_failed_terminal_count = int(row.get("callback_welcome_failed_terminal_count") or 0)
     violations = []
     if failed_terminal_count > 0:
         violations.append(f"failed_terminal_count={failed_terminal_count} exceeds 0")
@@ -756,6 +747,7 @@ def _external_effect_failed_retryable_backlog() -> DataHealthCheckResult:
             "failed_retryable_count": canary_failed_retryable_count,
             "failed_terminal_count": canary_failed_terminal_count,
             "blocked_count": canary_blocked_count,
+            "callback_welcome_failed_terminal_count": callback_welcome_failed_terminal_count,
             "excluded_from_business_health": True,
             "strict_provenance_required": True,
         },
@@ -1015,9 +1007,7 @@ def _questionnaire_submission_without_user_guard() -> DataHealthCheckResult:
         "guarded_missing_unionid_count": int(row.get("guarded_missing_unionid_count") or 0),
         "unguarded_missing_unionid_count": int(row.get("unguarded_missing_unionid_count") or 0),
         "missing_continuation_guard_count": int(row.get("missing_continuation_guard_count") or 0),
-        "identity_dependent_effect_without_unionid_count": int(
-            row.get("identity_dependent_effect_without_unionid_count") or 0
-        ),
+        "identity_dependent_effect_without_unionid_count": int(row.get("identity_dependent_effect_without_unionid_count") or 0),
         "missing_identity_count": int(row.get("missing_identity_count") or 0),
         "historical_pre_cutover_count": int(row.get("historical_pre_cutover_count") or 0),
         "cutover_at": QUESTIONNAIRE_AUTO_EXECUTE_CUTOVER_AT,
@@ -1339,7 +1329,7 @@ def _wecom_media_lease_health() -> DataHealthCheckResult:
                                          AND canary_job.target_id = CONCAT(
                                              lease.material_kind, ':', lease.material_id, ':', lease.upload_kind
                                          )
-                                         AND ({_id_validation_canary_job_sql('canary_job')})
+                                         AND ({direct_canary_job_sql("canary_job")})
                                    ) AS id_validation_canary_referenced,
                                    EXISTS (
                                        SELECT 1
@@ -1348,7 +1338,7 @@ def _wecom_media_lease_health() -> DataHealthCheckResult:
                                          AND ordinary_job.target_id = CONCAT(
                                              lease.material_kind, ':', lease.material_id, ':', lease.upload_kind
                                          )
-                                         AND NOT ({_id_validation_canary_job_sql('ordinary_job')})
+                                         AND NOT ({direct_canary_job_sql("ordinary_job")})
                                    ) AS ordinary_job_referenced
                             FROM wecom_media_leases lease
                             WHERE lease.tenant_id = 'aicrm'
