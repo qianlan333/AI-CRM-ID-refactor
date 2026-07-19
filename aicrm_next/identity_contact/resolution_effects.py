@@ -170,7 +170,29 @@ def enqueue_channel_entry_identity_resolution_in_connection(
     external = _text(external_userid)
     if not external:
         return {"ok": False, "reason": "external_userid_missing", "real_external_call_executed": False}
-    source_key = f"{_text(corp_id)}:{external}:{_text(follow_user_userid)}"
+    event_id = int(event_log_id or 0)
+    relationship_key = f"{_text(corp_id)}:{external}:{_text(follow_user_userid)}"
+    source_key = f"{relationship_key}:event:{event_id}" if event_id > 0 else relationship_key
+    if event_id > 0:
+        existing = connection.execute(
+            """
+            SELECT *
+            FROM crm_user_identity_resolution_queue
+            WHERE source_type = 'channel_entry'
+              AND source_key = %s
+            ORDER BY id ASC
+            LIMIT 1
+            FOR UPDATE
+            """,
+            (source_key,),
+        ).fetchone()
+        if existing:
+            return plan_identity_resolution_effect(
+                connection,
+                dict(existing),
+                parent_execution_id=parent_execution_id,
+                source_route="channel_entry.identity_resolution",
+            )
     row = connection.execute(
         """
         INSERT INTO crm_user_identity_resolution_queue (
