@@ -45,7 +45,11 @@ def _connect(*, autocommit: bool = True):
     return psycopg.connect(_database_url(), autocommit=autocommit, row_factory=dict_row)
 
 
-def _identity_plan(external_userid: str = "wm_event_driven_001") -> dict:
+def _identity_plan(
+    external_userid: str = "wm_event_driven_001",
+    *,
+    event_log_id: int = 8101,
+) -> dict:
     return channel_repo.enqueue_channel_entry_identity_resolution(
         corp_id="ww-event-driven",
         external_userid=external_userid,
@@ -58,7 +62,7 @@ def _identity_plan(external_userid: str = "wm_event_driven_001") -> dict:
             "corp_id": "ww-event-driven",
         },
         reason="postgres_event_driven_test",
-        event_log_id=8101,
+        event_log_id=event_log_id,
     )
 
 
@@ -127,6 +131,55 @@ def test_callback_persists_one_identity_effect_without_inline_provider(monkeypat
     assert effect_rows[0]["payload_summary_json"]["external_userid_present"] is True
     assert "wm_callback_event_driven" not in json.dumps(effect_rows[0]["payload_summary_json"])
     assert status_updates == [(8101, "success"), (8101, "success")]
+
+
+def test_identity_detail_is_idempotent_per_event_and_new_after_readd() -> None:
+    external_userid = "wm_identity_readd_001"
+    first = _identity_plan(external_userid, event_log_id=8101)
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE crm_user_identity_resolution_queue
+            SET status = 'resolved', updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (int(first["queue_id"]),),
+        )
+
+    duplicate = _identity_plan(external_userid, event_log_id=8101)
+    readded = _identity_plan(external_userid, event_log_id=8102)
+
+    with _connect() as connection:
+        queue_rows = connection.execute(
+            """
+            SELECT id, source_key, external_effect_job_id,
+                   payload_json ->> 'event_log_id' AS event_log_id
+            FROM crm_user_identity_resolution_queue
+            WHERE source_type = 'channel_entry'
+              AND external_userid = %s
+            ORDER BY id ASC
+            """,
+            (external_userid,),
+        ).fetchall()
+        effect_rows = connection.execute(
+            """
+            SELECT id, source_event_id, idempotency_key
+            FROM external_effect_job
+            WHERE effect_type = 'wecom.external_contact.detail.fetch'
+              AND target_id = %s
+            ORDER BY id ASC
+            """,
+            (external_userid,),
+        ).fetchall()
+
+    assert duplicate["queue_id"] == first["queue_id"]
+    assert duplicate["external_effect_job_id"] == first["external_effect_job_id"]
+    assert readded["queue_id"] != first["queue_id"]
+    assert readded["external_effect_job_id"] != first["external_effect_job_id"]
+    assert [row["event_log_id"] for row in queue_rows] == ["8101", "8102"]
+    assert [row["source_event_id"] for row in effect_rows] == ["8101", "8102"]
+    assert len({row["source_key"] for row in queue_rows}) == 2
+    assert len({row["idempotency_key"] for row in effect_rows}) == 2
 
 
 class _Provider:
