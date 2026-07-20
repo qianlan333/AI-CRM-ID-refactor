@@ -21,6 +21,7 @@ from .refresh import CustomerReadModelRefreshService
 CUSTOMER_REFRESH_REQUESTED_EVENT = "customer_read_model.refresh.requested"
 CUSTOMER_REFRESH_COMPLETED_EVENT = "customer_read_model.refreshed"
 CUSTOMER_REFRESH_CONSUMER = "customer_read_model_refresh_intent_consumer"
+CUSTOMER_REFRESH_COMPLETED_CONSUMER = "customer_read_model_refresh_completed_audit_consumer"
 CUSTOMER_DIRTY_CONSUMER = "customer_read_model_dirty_consumer"
 CUSTOMER_SOURCE_EVENTS = (
     "channel_entry.entered",
@@ -800,6 +801,7 @@ class CustomerReadModelRefreshIntentService:
 __all__ = [
     "CUSTOMER_DIRTY_CONSUMER",
     "CUSTOMER_REFRESH_COMPLETED_EVENT",
+    "CUSTOMER_REFRESH_COMPLETED_CONSUMER",
     "CUSTOMER_REFRESH_CONSUMER",
     "CUSTOMER_REFRESH_REQUESTED_EVENT",
     "CUSTOMER_SOURCE_EVENTS",

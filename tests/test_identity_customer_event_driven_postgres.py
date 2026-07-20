@@ -14,6 +14,8 @@ from aicrm_next.channel_entry import repo as channel_repo
 from aicrm_next.channel_entry.application import process_wecom_external_contact_event
 from aicrm_next.channel_entry.schemas import ProcessWeComExternalContactEventCommand
 from aicrm_next.customer_read_model.refresh_intents import (
+    CUSTOMER_REFRESH_COMPLETED_CONSUMER,
+    CUSTOMER_REFRESH_COMPLETED_EVENT,
     CUSTOMER_REFRESH_REQUESTED_EVENT,
     CustomerReadModelRefreshIntentRepository,
     CustomerReadModelRefreshIntentService,
@@ -779,3 +781,19 @@ def test_customer_refresh_request_is_intent_only_until_internal_consumer() -> No
     assert processed["ok"] is True
     assert processed["completion"]["completed"] is True
     assert refresh_calls == [False]
+
+    internal_registry = build_internal_event_consumer_registry()
+    relayed = InternalEventOutboxRelay(consumer_registry=internal_registry).relay_due(limit=10)
+    assert relayed["counts"]["failed_retryable_count"] == 0
+    assert relayed["counts"]["failed_terminal_count"] == 0
+    completion_events, completion_event_count = InternalEventService().list_events(
+        {"event_type": CUSTOMER_REFRESH_COMPLETED_EVENT}
+    )
+    assert completion_event_count == 1
+    completion_runs, completion_run_count = InternalEventService().list_consumer_runs(
+        {"event_id": completion_events[0].event_id}
+    )
+    assert completion_run_count == 1
+    assert completion_runs[0].consumer_name == CUSTOMER_REFRESH_COMPLETED_CONSUMER
+    receipt = InternalEventWorker(consumer_registry=internal_registry).dispatch_one(completion_runs[0])
+    assert receipt["consumer_run"]["status"] == "succeeded"
