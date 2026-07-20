@@ -97,13 +97,13 @@ def update_plan(
     existing = _plan(repo, plan_id)
     graphs = resolve_effect_graph_repository(effect_graph_repo)
     operator = clean_text(existing.get("owner_userid")) or "group_ops_plan_editor"
+    plan = repo.update_plan(int(plan_id), request.model_dump(exclude_none=True))
     invalidation = _invalidate(
         graphs,
         plan_id=plan_id,
         operator=operator,
         reason="group_ops_plan_updated",
     )
-    plan = repo.update_plan(int(plan_id), request.model_dump(exclude_none=True))
     materialization = _materialize(
         repo=repo,
         plan=plan,

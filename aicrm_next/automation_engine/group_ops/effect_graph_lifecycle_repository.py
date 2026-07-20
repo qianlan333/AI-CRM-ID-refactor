@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from aicrm_next.platform_foundation.external_effects.settlement_events import (
     enqueue_external_effect_settled_rows_in_session,
@@ -19,6 +20,67 @@ _TERMINAL_EFFECT_STATUSES = {
     "blocked",
     "cancelled",
 }
+
+
+def request_cancel_dispatching_group_ops_jobs_in_session(
+    session: Session,
+    *,
+    graph_id: int,
+    final_effect_job_id: int,
+    actor: str,
+    reason: str,
+    exclude_job_id: int = 0,
+) -> list[int]:
+    """Fence claimed graph jobs that have not crossed the provider boundary."""
+
+    rows = (
+        session.execute(
+            text(
+                """
+                UPDATE external_effect_job job
+                SET cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
+                    cancel_requested_by = CASE
+                        WHEN cancel_requested_by = '' THEN :actor ELSE cancel_requested_by
+                    END,
+                    cancel_reason = CASE
+                        WHEN cancel_reason = '' THEN :reason ELSE cancel_reason
+                    END,
+                    row_version = row_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE job.id IN (
+                    SELECT dependent_effect_job_id
+                    FROM automation_group_ops_effect_dependency
+                    WHERE graph_id = :graph_id
+                    UNION
+                    SELECT prerequisite_effect_job_id
+                    FROM automation_group_ops_effect_dependency
+                    WHERE graph_id = :graph_id
+                    UNION SELECT :final_effect_job_id
+                )
+                  AND job.id <> :exclude_job_id
+                  AND job.status = 'dispatching'
+                  AND job.cancel_requested_at IS NULL
+                  AND job.provider_call_started_at IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM external_effect_attempt attempt
+                      WHERE attempt.job_id = job.id
+                        AND attempt.provider_call_started_at IS NOT NULL
+                  )
+                RETURNING job.id
+                """
+            ),
+            {
+                "graph_id": int(graph_id),
+                "final_effect_job_id": int(final_effect_job_id),
+                "exclude_job_id": int(exclude_job_id),
+                "actor": clean_text(actor),
+                "reason": clean_text(reason),
+            },
+        )
+        .scalars()
+        .all()
+    )
+    return [int(value) for value in rows]
 
 
 class SQLAlchemyGroupOpsEffectGraphLifecycleMixin:
@@ -71,6 +133,7 @@ class SQLAlchemyGroupOpsEffectGraphLifecycleMixin:
 
             is_final = int(graph.get("final_effect_job_id") or 0) == int(effect_job_id)
             cancelled_job_ids: list[int] = []
+            cancel_requested_job_ids: list[int] = []
             if not is_final:
                 dependency_status = "cancelled" if terminal_status == "cancelled" else "failed"
                 session.execute(
@@ -88,6 +151,15 @@ class SQLAlchemyGroupOpsEffectGraphLifecycleMixin:
                         "attempt_id": clean_text(attempt_id),
                         "dependency_id": int(graph["dependency_id"]),
                     },
+                )
+            if terminal_status != "succeeded":
+                cancel_requested_job_ids = request_cancel_dispatching_group_ops_jobs_in_session(
+                    session,
+                    graph_id=int(graph["id"]),
+                    final_effect_job_id=int(graph.get("final_effect_job_id") or 0),
+                    exclude_job_id=int(effect_job_id),
+                    actor="group_ops_graph_settlement",
+                    reason="group_ops_sibling_terminal",
                 )
                 cancelled_rows = (
                     session.execute(
@@ -116,9 +188,9 @@ class SQLAlchemyGroupOpsEffectGraphLifecycleMixin:
                                 SELECT prerequisite_effect_job_id
                                 FROM automation_group_ops_effect_dependency
                                 WHERE graph_id = :graph_id
-                                  AND prerequisite_effect_job_id <> :effect_job_id
                                 UNION SELECT :final_effect_job_id
                             )
+                              AND job.id <> :effect_job_id
                               AND job.status IN ('planned', 'approved', 'queued', 'failed_retryable')
                               AND job.provider_call_started_at IS NULL
                               AND NOT EXISTS (
@@ -142,6 +214,17 @@ class SQLAlchemyGroupOpsEffectGraphLifecycleMixin:
                     session,
                     cancelled_rows,
                 )
+                if is_final:
+                    session.execute(
+                        text(
+                            """
+                            UPDATE automation_group_ops_effect_dependency
+                            SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+                            WHERE graph_id = :graph_id AND status = 'waiting'
+                            """
+                        ),
+                        {"graph_id": int(graph["id"])},
+                    )
             final_boundary = (
                 session.execute(
                     text(
@@ -183,6 +266,7 @@ class SQLAlchemyGroupOpsEffectGraphLifecycleMixin:
                 "effect_job_id": int(effect_job_id),
                 "effect_status": terminal_status,
                 "cancelled_job_ids": cancelled_job_ids,
+                "cancel_requested_job_ids": cancel_requested_job_ids,
                 "provider_boundary_crossed": provider_boundary_crossed,
             }
 
@@ -225,7 +309,17 @@ class SQLAlchemyGroupOpsEffectGraphLifecycleMixin:
             cancelled_job_ids: list[int] = []
             cancelled_executions: list[str] = []
             boundary_executions: list[str] = []
+            cancel_requested_job_ids: list[int] = []
             for graph in graphs:
+                cancel_requested_job_ids.extend(
+                    request_cancel_dispatching_group_ops_jobs_in_session(
+                        session,
+                        graph_id=int(graph["id"]),
+                        final_effect_job_id=int(graph.get("final_effect_job_id") or 0),
+                        actor=normalized_actor,
+                        reason=normalized_reason,
+                    )
+                )
                 cancelled_rows = (
                     session.execute(
                         text(
@@ -335,6 +429,7 @@ class SQLAlchemyGroupOpsEffectGraphLifecycleMixin:
                 "cancelled_execution_ids": cancelled_executions,
                 "provider_boundary_execution_ids": boundary_executions,
                 "cancelled_job_ids": sorted(set(cancelled_job_ids)),
+                "cancel_requested_job_ids": sorted(set(cancel_requested_job_ids)),
                 "provider_boundary_crossed": bool(boundary_executions),
             }
 
@@ -380,6 +475,7 @@ class InMemoryGroupOpsEffectGraphLifecycleMixin:
                 graph["dependencies"][dependency_key]["status"] = (
                     "cancelled" if terminal_status == "cancelled" else "failed"
                 )
+            if terminal_status != "succeeded":
                 for job_id in graph["response"]["job_ids"]:
                     if int(job_id) == int(effect_job_id):
                         continue
@@ -471,4 +567,5 @@ class InMemoryGroupOpsEffectGraphLifecycleMixin:
 __all__ = [
     "InMemoryGroupOpsEffectGraphLifecycleMixin",
     "SQLAlchemyGroupOpsEffectGraphLifecycleMixin",
+    "request_cancel_dispatching_group_ops_jobs_in_session",
 ]

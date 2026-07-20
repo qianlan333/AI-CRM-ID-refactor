@@ -15,6 +15,7 @@ from aicrm_next.background_jobs.broadcast_queue_worker import (
     PostgresBroadcastQueueRepository,
     SafeSkippedBroadcastDispatcher,
 )
+from aicrm_next.cloud_orchestrator.repository import PostgresCloudPlanRepository
 from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
 
 
@@ -218,6 +219,13 @@ def test_terminal_delegated_effect_closes_broadcast_and_recipient_projections(ne
 
     result = broadcast_effect_repository._project(effect_job, None)
 
+    with psycopg.connect(os.environ["DATABASE_URL"]) as connection:
+        connection.execute(
+            "UPDATE cloud_broadcast_plans SET candidate_count = 1 WHERE plan_id = %s",
+            (seeded["plan_id"],),
+        )
+        connection.commit()
+
     assert result["aggregate_status"] == "blocked"
     job = _row(
         "SELECT status, failed_count, reconciliation_required FROM broadcast_jobs WHERE id = %s",
@@ -231,9 +239,17 @@ def test_terminal_delegated_effect_closes_broadcast_and_recipient_projections(ne
         "SELECT status, last_error FROM cloud_broadcast_plan_recipient_messages WHERE id = %s",
         (seeded["message_id"],),
     )
+    stats = PostgresCloudPlanRepository().plan_stats(str(seeded["plan_id"]))
+    failed_recipients, failed_total = PostgresCloudPlanRepository().list_recipients(
+        str(seeded["plan_id"]),
+        status="failed",
+    )
     assert job == {"status": "blocked", "failed_count": 1, "reconciliation_required": False}
-    assert recipient == {"send_status": "blocked", "last_error": "external_effect_blocked"}
-    assert message == {"status": "blocked", "last_error": "external_effect_blocked"}
+    assert recipient == {"send_status": "failed", "last_error": "external_effect_blocked"}
+    assert message == {"status": "failed", "last_error": "external_effect_blocked"}
+    assert stats["failed_count"] == 1
+    assert failed_total == 1
+    assert [item["recipient_id"] for item in failed_recipients] == [seeded["recipient_id"]]
 
 
 def test_claim_begin_and_atomic_success_finalization_keep_all_projections_aligned(next_pg_schema) -> None:

@@ -136,6 +136,65 @@ def _provider_attachment(item: dict[str, Any]) -> dict[str, Any]:
     raise ValueError("unsupported welcome attachment msgtype")
 
 
+def _request_cancel_dispatching_welcome_jobs_in_session(
+    session: Session,
+    *,
+    graph_id: int,
+    final_job_id: int,
+    actor: str,
+    reason: str,
+    exclude_job_id: int = 0,
+) -> list[int]:
+    rows = (
+        session.execute(
+            sql_text(
+                """
+                UPDATE external_effect_job job
+                SET cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
+                    cancel_requested_by = CASE
+                        WHEN cancel_requested_by = '' THEN :actor ELSE cancel_requested_by
+                    END,
+                    cancel_reason = CASE
+                        WHEN cancel_reason = '' THEN :reason ELSE cancel_reason
+                    END,
+                    row_version = row_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE job.id IN (
+                    SELECT prerequisite_effect_job_id
+                    FROM channel_welcome_effect_dependency
+                    WHERE graph_id = :graph_id
+                    UNION
+                    SELECT dependent_effect_job_id
+                    FROM channel_welcome_effect_dependency
+                    WHERE graph_id = :graph_id
+                    UNION SELECT :final_job_id
+                )
+                  AND job.id <> :exclude_job_id
+                  AND job.status = 'dispatching'
+                  AND job.cancel_requested_at IS NULL
+                  AND job.provider_call_started_at IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM external_effect_attempt attempt
+                      WHERE attempt.job_id = job.id
+                        AND attempt.provider_call_started_at IS NOT NULL
+                  )
+                RETURNING job.id
+                """
+            ),
+            {
+                "graph_id": int(graph_id),
+                "final_job_id": int(final_job_id),
+                "exclude_job_id": int(exclude_job_id),
+                "actor": _clean(actor),
+                "reason": _clean(reason),
+            },
+        )
+        .scalars()
+        .all()
+    )
+    return [int(value) for value in rows]
+
+
 class SQLAlchemyWelcomeEffectGraphRepository:
     def __init__(self, session_factory=None) -> None:
         self._session_factory = session_factory or get_session_factory()
@@ -701,6 +760,7 @@ class SQLAlchemyWelcomeEffectGraphRepository:
 
             is_final = int(graph.get("final_effect_job_id") or 0) == int(effect_job_id)
             cancelled_job_ids: list[int] = []
+            cancel_requested_job_ids: list[int] = []
             if not is_final:
                 session.execute(
                     sql_text(
@@ -717,6 +777,15 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                         "attempt_id": _clean(attempt_id),
                         "dependency_id": int(graph["dependency_id"]),
                     },
+                )
+            if terminal_status != "succeeded":
+                cancel_requested_job_ids = _request_cancel_dispatching_welcome_jobs_in_session(
+                    session,
+                    graph_id=int(graph["id"]),
+                    final_job_id=int(graph.get("final_effect_job_id") or 0),
+                    exclude_job_id=int(effect_job_id),
+                    actor="welcome_graph_settlement",
+                    reason="welcome_sibling_terminal",
                 )
                 cancelled_rows = session.execute(
                         sql_text(
@@ -744,9 +813,9 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                                 SELECT prerequisite_effect_job_id
                                 FROM channel_welcome_effect_dependency
                                 WHERE graph_id = :graph_id
-                                  AND prerequisite_effect_job_id <> :effect_job_id
                                 UNION SELECT :final_job_id
                             )
+                              AND job.id <> :effect_job_id
                               AND job.status IN ('planned', 'approved', 'queued', 'failed_retryable')
                               AND job.provider_call_started_at IS NULL
                               AND NOT EXISTS (
@@ -764,6 +833,17 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                         },
                     ).mappings().all()
                 cancelled_job_ids = enqueue_external_effect_settled_rows_in_session(session, cancelled_rows)
+                if is_final:
+                    session.execute(
+                        sql_text(
+                            """
+                            UPDATE channel_welcome_effect_dependency
+                            SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+                            WHERE graph_id = :graph_id AND status = 'waiting'
+                            """
+                        ),
+                        {"graph_id": int(graph["id"])},
+                    )
             final_boundary = session.execute(
                 sql_text(
                     """
@@ -792,6 +872,7 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                 "effect_job_id": int(effect_job_id),
                 "effect_status": terminal_status,
                 "cancelled_job_ids": cancelled_job_ids,
+                "cancel_requested_job_ids": cancel_requested_job_ids,
                 "provider_boundary_crossed": bool(final_boundary),
             }
 
@@ -845,6 +926,13 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                 session.rollback()
                 return {"ok": False, "cancelled": False, "reason": "graph_not_found"}
             graph = dict(graph_row)
+            cancel_requested = _request_cancel_dispatching_welcome_jobs_in_session(
+                session,
+                graph_id=int(graph["id"]),
+                final_job_id=int(graph.get("final_effect_job_id") or 0),
+                actor=_clean(actor),
+                reason=_clean(reason),
+            )
             cancelled_rows = session.execute(
                 sql_text(
                     """
@@ -903,6 +991,7 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                 "cancelled": True,
                 "execution_id": graph["execution_id"],
                 "cancelled_job_ids": [int(value) for value in cancelled],
+                "cancel_requested_job_ids": [int(value) for value in cancel_requested],
             }
 
 

@@ -63,6 +63,35 @@ def test_disable_plan_invalidates_pre_materialized_effects_before_state_change(g
     assert response["effect_invalidation"]["cancelled_job_ids"] == [101]
 
 
+def test_failed_plan_update_does_not_invalidate_live_effects(group_ops_repo, monkeypatch):  # noqa: F811
+    from aicrm_next.automation_engine.group_ops.application import UpdateGroupOpsPlanCommand
+    from aicrm_next.automation_engine.group_ops.dto import GroupOpsPlanUpdateRequest
+    from aicrm_next.shared.errors import ContractError
+
+    cancelled_plan_ids: list[int] = []
+
+    class _EffectGraphs:
+        def cancel_plan(self, plan_id, *, actor, reason, node_id=None):
+            del actor, reason, node_id
+            cancelled_plan_ids.append(int(plan_id))
+            return {"ok": True}
+
+    def _fail_update(_plan_id, _payload):
+        raise ContractError("duplicate plan code")
+
+    original = group_ops_repo.get_plan(1)
+    monkeypatch.setattr(group_ops_repo, "update_plan", _fail_update)
+
+    with pytest.raises(ContractError, match="duplicate plan code"):
+        UpdateGroupOpsPlanCommand(
+            repo=group_ops_repo,
+            effect_graph_repo=_EffectGraphs(),
+        )(1, GroupOpsPlanUpdateRequest(plan_code="group_plan_002"))
+
+    assert cancelled_plan_ids == []
+    assert group_ops_repo.get_plan(1) == original
+
+
 def test_domain_reuses_unified_attachment_validation():
     from aicrm_next.automation_engine.group_ops.domain import normalize_message_content
     from aicrm_next.shared.errors import ContractError

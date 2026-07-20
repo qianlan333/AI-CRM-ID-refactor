@@ -38,6 +38,7 @@ from .domain import clean_text, mask_sensitive_payload
 from .effect_graph_lifecycle_repository import (
     InMemoryGroupOpsEffectGraphLifecycleMixin,
     SQLAlchemyGroupOpsEffectGraphLifecycleMixin,
+    request_cancel_dispatching_group_ops_jobs_in_session,
 )
 from .external_effects import content_payload_summary, parse_external_effect_scheduled_at
 
@@ -470,6 +471,13 @@ class SQLAlchemyGroupOpsEffectGraphRepository(SQLAlchemyGroupOpsEffectGraphLifec
             .all()
         )
         for graph in old_graphs:
+            request_cancel_dispatching_group_ops_jobs_in_session(
+                session,
+                graph_id=int(graph["id"]),
+                final_effect_job_id=int(graph["final_effect_job_id"] or 0),
+                actor=actor or "group_ops_plan_editor",
+                reason="group_ops_plan_version_superseded",
+            )
             cancelled_rows = session.execute(
                 text(
                     """
@@ -1013,6 +1021,13 @@ class SQLAlchemyGroupOpsEffectGraphRepository(SQLAlchemyGroupOpsEffectGraphLifec
                 session.rollback()
                 return {"ok": False, "cancelled": False, "reason": "graph_not_found"}
             graph = dict(graph)
+            cancel_requested = request_cancel_dispatching_group_ops_jobs_in_session(
+                session,
+                graph_id=int(graph["id"]),
+                final_effect_job_id=int(graph["final_effect_job_id"] or 0),
+                actor=clean_text(actor),
+                reason=clean_text(reason),
+            )
             cancelled_rows = (
                 session.execute(
                     text(
@@ -1061,6 +1076,7 @@ class SQLAlchemyGroupOpsEffectGraphRepository(SQLAlchemyGroupOpsEffectGraphLifec
                 "cancelled": True,
                 "execution_id": graph["execution_id"],
                 "cancelled_job_ids": [int(item) for item in updated],
+                "cancel_requested_job_ids": [int(item) for item in cancel_requested],
             }
 
 class InMemoryGroupOpsEffectGraphRepository(InMemoryGroupOpsEffectGraphLifecycleMixin):

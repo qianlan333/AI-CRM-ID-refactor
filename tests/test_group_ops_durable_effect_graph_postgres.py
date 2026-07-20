@@ -14,6 +14,7 @@ from aicrm_next.automation_engine.group_ops.durable_effects_repository import (
     GroupOpsEffectMaterial,
     SQLAlchemyGroupOpsEffectGraphRepository,
 )
+from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
 from aicrm_next.shared.db_session import get_session_factory
 
 
@@ -330,3 +331,76 @@ def test_terminal_upload_closes_graph_and_settles_cancelled_final_effect():
     assert graph["status"] == "terminal"
     assert event["event_type"] == "external_effect.settled"
     assert event["payload_json"]["status"] == "cancelled"
+
+
+def test_terminal_final_effect_cancels_all_unneeded_uploads():
+    repo = _repo()
+    planned = repo.plan(_request("terminal-final-settlement", material_count=2))
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET status = 'cancelled', cancel_requested_at = CURRENT_TIMESTAMP,
+                cancelled_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (planned["final_effect_job_id"],),
+        )
+
+    result = repo.settle_effect(planned["final_effect_job_id"], status="cancelled")
+
+    assert result["settled"] is True
+    assert set(result["cancelled_job_ids"]) == set(planned["upload_effect_job_ids"])
+    with _connect() as connection:
+        uploads = connection.execute(
+            "SELECT id, status FROM external_effect_job WHERE id = ANY(%s) ORDER BY id",
+            (planned["upload_effect_job_ids"],),
+        ).fetchall()
+        dependency_statuses = connection.execute(
+            """
+            SELECT DISTINCT status
+            FROM automation_group_ops_effect_dependency
+            WHERE graph_id = (
+                SELECT id FROM automation_group_ops_effect_graph WHERE execution_id = %s
+            )
+            """,
+            (planned["execution_id"],),
+        ).fetchall()
+    assert [row["status"] for row in uploads] == ["cancelled", "cancelled"]
+    assert dependency_statuses == [{"status": "cancelled"}]
+
+
+def test_plan_invalidation_fences_claimed_job_before_provider_boundary():
+    graph_repo = _repo()
+    planned = graph_repo.plan(
+        _request(
+            "plan-dispatching-pre-provider",
+            material_count=1,
+            source_kind="plan_node",
+            scheduled_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+    )
+    effects = SQLAlchemyExternalEffectRepository(get_session_factory())
+    upload_id = planned["upload_effect_job_ids"][0]
+    claimed = effects.acquire_job(upload_id, locked_by="group-ops-review-race")
+    assert claimed is not None
+    assert claimed.status == "dispatching"
+    assert claimed.provider_call_started_at == ""
+
+    cancelled = graph_repo.cancel_plan(
+        700,
+        actor="pytest",
+        reason="plan revision",
+        node_id=701,
+    )
+
+    assert upload_id in cancelled["cancel_requested_job_ids"]
+    current = effects.get_job(upload_id)
+    assert current is not None
+    assert current.status == "dispatching"
+    assert current.cancel_requested_at
+    assert current.provider_call_started_at == ""
+    assert effects.begin_provider_attempt(job=claimed, request_summary={}) is None
+    settled = effects.settle_cancel(job=current)
+    assert settled is not None
+    assert settled.status == "cancelled"

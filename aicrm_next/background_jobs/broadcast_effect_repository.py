@@ -65,8 +65,13 @@ def _project(job, _dispatch_result):
             if candidate in statuses:
                 aggregate_status = candidate
                 break
-        recipient_status = aggregate_status
-        message_status = "skipped" if aggregate_status == "cancelled" else aggregate_status
+        projection_status = {
+            "unknown_after_dispatch": "failed",
+            "failed_terminal": "failed",
+            "blocked": "failed",
+        }.get(aggregate_status, aggregate_status)
+        recipient_status = projection_status
+        message_status = "skipped" if aggregate_status == "cancelled" else projection_status
         succeeded_count = statuses.count("succeeded")
         failed_count = len(statuses) - succeeded_count
         side_effect_executed = any(bool(row["side_effect_executed"]) for row in rows)
