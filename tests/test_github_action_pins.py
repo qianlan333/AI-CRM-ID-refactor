@@ -19,10 +19,11 @@ def test_repository_external_actions_are_immutable_and_trusted() -> None:
 
     assert errors == []
     # The ID-validation repository owns CI, full regression, isolated duration
-    # baseline refresh, weekly test-governance observability, the single
+    # baseline refresh, trusted baseline-PR validation, weekly test-governance
+    # observability, the single
     # 49.232.57.128 deployment workflow, and one guarded 49-only queue-operation
     # workflow. Production promotion remains absent.
-    assert workflow_count == 6
+    assert workflow_count == 7
     assert external_use_count > 0
 
 

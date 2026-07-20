@@ -121,6 +121,17 @@
     "public_product": ["public_product", "wechat_pay", "checkout"],
     "service_period": ["service_period", "entitlement"]
   },
+  "runtime_test_overrides": [
+    {
+      "paths": [
+        "scripts/ops/check_identity_customer_event_driven.py"
+      ],
+      "python_tests": [
+        "tests/test_identity_customer_event_driven_postgres.py"
+      ],
+      "rationale": "The static rollout checker reads repository files instead of importing its protected PostgreSQL contract, so source conventions cannot discover that relationship."
+    }
+  ],
   "frontend_build_paths": [
     "frontend/admin/**/*.ts",
     "tsconfig.frontend.json",

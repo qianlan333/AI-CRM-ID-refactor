@@ -48,10 +48,12 @@ jobs:
           SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           junit_args=()
+          junit_file_count=0
           while IFS= read -r junit_file; do
             junit_args+=(--junit-xml "$junit_file")
+            junit_file_count=$((junit_file_count + 1))
           done < <(find "$RUNNER_TEMP/pytest-junit" -type f -name 'python-shard-*.xml' -print | sort)
-          if [ "${#junit_args[@]}" -ne 16 ]; then
+          if [ "$junit_file_count" -ne 8 ]; then
             echo "expected eight JUnit files"
             exit 1
           fi
@@ -90,9 +92,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
           BASELINE_BRANCH: ${{ steps.baseline_branch.outputs.branch }}
         run: |
           branch="$BASELINE_BRANCH"
+          body_file="$RUNNER_TEMP/pytest-duration-baseline-pr.md"
+          {
+            echo "由成功的 Full Regression #${SOURCE_RUN_ID} 自动生成。"
+            echo
+            printf 'Source SHA: `%s`\n' "$SOURCE_SHA"
+            echo
+            echo "仅更新测试分片耗时数据；可信基线校验会从该 Full Regression 的八个 JUnit artifact 重建并逐字节比较，不自动合并。"
+          } > "$body_file"
           existing_pr="$(gh pr list --base main --head "$branch" --state open --json url --jq '.[0].url // ""')"
           if [ -z "$existing_pr" ]; then
             existing_pr="$(gh pr create \
@@ -100,7 +111,11 @@ jobs:
               --head "$branch" \
               --draft \
               --title "ci: 自动刷新 pytest 耗时基线" \
-              --body "由成功的 Full Regression #${SOURCE_RUN_ID} 自动生成。仅更新测试分片耗时数据，不自动合并。")"
+              --body-file "$body_file")"
+          else
+            gh pr edit "$existing_pr" \
+              --title "ci: 自动刷新 pytest 耗时基线" \
+              --body-file "$body_file"
           fi
           echo "pr_url=$existing_pr" >> "$GITHUB_OUTPUT"
           echo "Duration baseline draft PR: $existing_pr" >> "$GITHUB_STEP_SUMMARY"

@@ -171,6 +171,23 @@ def test_root_design_qa_artifact_is_mapped_to_docs_only_scope() -> None:
     assert result["needs_full_ci"] is False
 
 
+def test_duration_baseline_only_change_reuses_full_regression_provenance_without_repeating_it() -> None:
+    result = _select("docs/ci/pytest_duration_baseline.json")
+
+    assert result["matched_scopes"] == ["pytest_duration_baseline"]
+    assert result["unmatched_files"] == []
+    assert result["python_tests"] == [
+        "tests/test_pytest_duration_baseline_builder.py",
+        "tests/test_pytest_duration_baseline_pr_validation.py",
+        "tests/test_pytest_shard_selector.py",
+        "tests/test_test_inventory_audit.py",
+        "tests/test_ci_workflow_contract.py",
+    ]
+    assert result["needs_postgres"] is False
+    assert result["architecture_gate"] == "fast"
+    assert result["needs_full_ci"] is False
+
+
 def test_live_runtime_readiness_replacement_has_permanent_full_ci_scope() -> None:
     result = _select(
         "tools/check_live_runtime_readiness.py",
@@ -1054,7 +1071,6 @@ def test_ci_change_selects_contract_tests_and_full_gate() -> None:
 
 def test_ci_shard_selector_test_change_selects_full_gate() -> None:
     for changed_path in (
-        "docs/ci/pytest_duration_baseline.json",
         "tests/test_pytest_duration_baseline_builder.py",
         "tests/test_pytest_shard_selector.py",
     ):

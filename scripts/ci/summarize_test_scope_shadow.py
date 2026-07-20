@@ -9,8 +9,10 @@ legacy-only test differences blocked until they receive an explicit review.
 from __future__ import annotations
 
 import argparse
+from collections import Counter, defaultdict
 from datetime import datetime
 import json
+import math
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -184,6 +186,18 @@ def _maximum_gate(actual: int, required: int) -> dict:
     return {"actual": actual, "required": required, "passed": actual <= required, "operator": "<="}
 
 
+def _estimated_seconds(scope: dict) -> float | None:
+    value = scope.get("estimated_python_work_seconds")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("estimated Python work must be numeric")
+    normalized = float(value)
+    if not math.isfinite(normalized) or normalized < 0:
+        raise ValueError("estimated Python work must be finite and non-negative")
+    return normalized
+
+
 def summarize_shadow_reports(
     reports: dict[int, dict],
     metadata: dict[int, dict],
@@ -202,7 +216,16 @@ def summarize_shadow_reports(
     candidate_test_total = 0
     scoped_legacy_test_total = 0
     scoped_candidate_test_total = 0
+    scoped_duration_evidence_samples = 0
+    scoped_legacy_estimated_seconds = 0.0
+    scoped_candidate_estimated_seconds = 0.0
+    scoped_full_regressions_avoided = 0
+    legacy_full_regression_samples = 0
+    candidate_full_regression_samples = 0
+    fallback_reason_counts: Counter[str] = Counter()
     legacy_only_tests: set[str] = set()
+    legacy_only_runs: defaultdict[str, set[int]] = defaultdict(set)
+    runtime_path_runs: defaultdict[str, set[int]] = defaultdict(set)
     sample_rows: list[dict] = []
 
     for sample in samples:
@@ -212,7 +235,15 @@ def summarize_shadow_reports(
         comparison = report.get("comparison") if isinstance(report.get("comparison"), dict) else {}
         high_risk_reasons = candidate.get("high_risk_reasons") if isinstance(candidate.get("high_risk_reasons"), list) else []
         fallback_reasons = candidate.get("fallback_reasons") if isinstance(candidate.get("fallback_reasons"), list) else []
+        runtime_paths = (
+            candidate.get("runtime_paths_without_test_match")
+            if isinstance(candidate.get("runtime_paths_without_test_match"), list)
+            else []
+        )
+        legacy_full = legacy.get("needs_full_ci") is True
         candidate_full = candidate.get("needs_full_ci") is True
+        legacy_seconds = _estimated_seconds(legacy)
+        candidate_seconds = _estimated_seconds(candidate)
         is_high_risk = bool(high_risk_reasons)
         is_fallback = bool(fallback_reasons)
         high_risk_samples += int(is_high_risk)
@@ -220,6 +251,11 @@ def summarize_shadow_reports(
         fallback_samples += int(is_fallback)
         normal_path_fallback_samples += int(is_fallback and not is_high_risk)
         high_risk_downgrades += int(is_high_risk and not candidate_full)
+        legacy_full_regression_samples += int(legacy_full)
+        candidate_full_regression_samples += int(candidate_full)
+        fallback_reason_counts.update(str(reason) for reason in fallback_reasons)
+        for runtime_path in runtime_paths:
+            runtime_path_runs[str(runtime_path)].add(sample["run_id"])
         legacy_tests = legacy.get("python_tests") if isinstance(legacy.get("python_tests"), list) else []
         candidate_tests = candidate.get("python_tests") if isinstance(candidate.get("python_tests"), list) else []
         legacy_test_total += len(legacy_tests)
@@ -227,9 +263,17 @@ def summarize_shadow_reports(
         if not candidate_full:
             scoped_legacy_test_total += len(legacy_tests)
             scoped_candidate_test_total += len(candidate_tests)
+            scoped_full_regressions_avoided += int(legacy_full)
+            if legacy_seconds is not None and candidate_seconds is not None:
+                scoped_duration_evidence_samples += 1
+                scoped_legacy_estimated_seconds += legacy_seconds
+                scoped_candidate_estimated_seconds += candidate_seconds
         current_legacy_only = comparison.get("legacy_only_python_tests")
         if isinstance(current_legacy_only, list):
-            legacy_only_tests.update(str(path) for path in current_legacy_only)
+            for test_path in current_legacy_only:
+                normalized_test_path = str(test_path)
+                legacy_only_tests.add(normalized_test_path)
+                legacy_only_runs[normalized_test_path].add(sample["run_id"])
         sample_rows.append(
             {
                 "pull_request_number": sample["pull_request_number"],
@@ -238,11 +282,16 @@ def summarize_shadow_reports(
                 "run_id": sample["run_id"],
                 "created_at": sample["created_at"],
                 "head_sha": sample["head_sha"],
+                "legacy_needs_full_ci": legacy_full,
                 "candidate_needs_full_ci": candidate_full,
+                "candidate_would_avoid_full_regression": legacy_full and not candidate_full,
                 "high_risk_reasons": high_risk_reasons,
                 "fallback_reasons": fallback_reasons,
+                "runtime_paths_without_test_match": runtime_paths,
                 "legacy_python_tests": len(legacy_tests),
                 "candidate_python_tests": len(candidate_tests),
+                "legacy_estimated_python_work_seconds": legacy_seconds,
+                "candidate_estimated_python_work_seconds": candidate_seconds,
             }
         )
 
@@ -252,7 +301,34 @@ def summarize_shadow_reports(
     else:
         observation_days = 0
     unreviewed = sorted(legacy_only_tests - reviewed)
-    reduction = 0.0 if scoped_legacy_test_total == 0 else 1.0 - (scoped_candidate_test_total / scoped_legacy_test_total)
+    file_reduction = 0.0 if scoped_legacy_test_total == 0 else 1.0 - (scoped_candidate_test_total / scoped_legacy_test_total)
+    estimated_work_reduction = (
+        None
+        if scoped_duration_evidence_samples == 0 or scoped_legacy_estimated_seconds <= 0
+        else 1.0 - (scoped_candidate_estimated_seconds / scoped_legacy_estimated_seconds)
+    )
+    legacy_only_review_queue = sorted(
+        (
+            {
+                "test_path": test_path,
+                "occurrences": len(legacy_only_runs[test_path]),
+                "run_ids": sorted(legacy_only_runs[test_path]),
+            }
+            for test_path in unreviewed
+        ),
+        key=lambda item: (-item["occurrences"], item["test_path"]),
+    )
+    runtime_path_review_queue = sorted(
+        (
+            {
+                "path": runtime_path,
+                "occurrences": len(run_ids),
+                "run_ids": sorted(run_ids),
+            }
+            for runtime_path, run_ids in runtime_path_runs.items()
+        ),
+        key=lambda item: (-item["occurrences"], item["path"]),
+    )
     gates = {
         "pull_request_samples": _minimum_gate(len(samples), criteria["minimum_pull_request_samples"]),
         "observation_days": _minimum_gate(observation_days, criteria["minimum_observation_days"]),
@@ -282,10 +358,23 @@ def summarize_shadow_reports(
         "candidate_python_test_selections": candidate_test_total,
         "scoped_legacy_python_test_selections": scoped_legacy_test_total,
         "scoped_candidate_python_test_selections": scoped_candidate_test_total,
-        "candidate_selection_reduction_ratio": round(reduction, 4),
+        "candidate_selection_reduction_ratio": round(file_reduction, 4),
+        "candidate_file_selection_reduction_ratio": round(file_reduction, 4),
+        "scoped_duration_evidence_samples": scoped_duration_evidence_samples,
+        "scoped_legacy_estimated_python_work_seconds": round(scoped_legacy_estimated_seconds, 3),
+        "scoped_candidate_estimated_python_work_seconds": round(scoped_candidate_estimated_seconds, 3),
+        "candidate_estimated_work_reduction_ratio": (
+            None if estimated_work_reduction is None else round(estimated_work_reduction, 4)
+        ),
+        "legacy_full_regression_samples": legacy_full_regression_samples,
+        "candidate_full_regression_samples": candidate_full_regression_samples,
+        "scoped_full_regressions_avoided": scoped_full_regressions_avoided,
+        "fallback_reason_counts": dict(sorted(fallback_reason_counts.items())),
         "legacy_only_tests": sorted(legacy_only_tests),
         "reviewed_legacy_only_tests": sorted(legacy_only_tests & reviewed),
         "unreviewed_legacy_only_tests": unreviewed,
+        "legacy_only_review_queue": legacy_only_review_queue,
+        "runtime_path_review_queue": runtime_path_review_queue,
         "criteria": criteria,
         "gates": gates,
         "automated_ready_for_explicit_cutover_review": all(gate["passed"] for gate in gates.values()),
@@ -295,6 +384,11 @@ def summarize_shadow_reports(
 
 def render_markdown(summary: dict) -> str:
     status = "READY FOR EXPLICIT REVIEW" if summary["automated_ready_for_explicit_cutover_review"] else "KEEP SHADOW MODE"
+    work_reduction = summary.get("candidate_estimated_work_reduction_ratio")
+    if work_reduction is None:
+        work_reduction_line = "- Estimated Python work reduction: unavailable (no complete duration evidence)"
+    else:
+        work_reduction_line = f"- Estimated Python work reduction: {work_reduction:.1%}"
     lines = [
         "# Test scope v2 observation report",
         "",
@@ -303,7 +397,15 @@ def render_markdown(summary: dict) -> str:
         f"- Eligible pull requests: {summary['eligible_pull_request_samples']}",
         f"- Observation window: {summary['observation_days']} days",
         f"- Scoped / high-risk samples: {summary['scoped_samples']} / {summary['high_risk_samples']}",
-        f"- Candidate selection reduction: {summary['candidate_selection_reduction_ratio']:.1%}",
+        work_reduction_line,
+        "- Estimated scoped Python work: "
+        f"legacy={summary['scoped_legacy_estimated_python_work_seconds']:.1f}s; "
+        f"candidate={summary['scoped_candidate_estimated_python_work_seconds']:.1f}s; "
+        f"evidence={summary['scoped_duration_evidence_samples']} samples",
+        "- Full regressions avoided in scoped samples: "
+        f"{summary['scoped_full_regressions_avoided']} / {summary['scoped_samples']}",
+        "- Explicit test-file selection change: "
+        f"{summary['candidate_file_selection_reduction_ratio']:.1%} reduction (diagnostic only)",
         f"- Safety fallbacks / normal-path fallbacks / high-risk downgrades: {summary['fallback_samples']} / {summary['normal_path_fallback_samples']} / {summary['high_risk_downgrades']}",
         "",
         "## Cutover gates",
@@ -315,13 +417,26 @@ def render_markdown(summary: dict) -> str:
         result = "PASS" if gate["passed"] else "WAIT"
         lines.append(f"| `{name}` | {gate['actual']} | {gate['operator']} {gate['required']} | {result} |")
     unreviewed = summary["unreviewed_legacy_only_tests"]
+    review_queue = summary["legacy_only_review_queue"]
     lines.extend(("", "## Legacy-only review queue", ""))
     if unreviewed:
         lines.append(f"{len(unreviewed)} unique tests still need an explicit `candidate_includes` or `legacy_overcoverage` review before cutover.")
         lines.append("")
-        lines.extend(f"- `{path}`" for path in unreviewed[:50])
+        lines.extend(("| Test file | Occurrences | Sample runs |", "| --- | ---: | --- |"))
+        for item in review_queue[:50]:
+            run_ids = ", ".join(f"`{run_id}`" for run_id in item["run_ids"])
+            lines.append(f"| `{item['test_path']}` | {item['occurrences']} | {run_ids} |")
     else:
         lines.append("No unreviewed legacy-only tests remain in the eligible sample set.")
+    runtime_queue = summary["runtime_path_review_queue"]
+    lines.extend(("", "## Runtime-path fallback review queue", ""))
+    if runtime_queue:
+        lines.extend(("| Runtime path | Occurrences | Sample runs |", "| --- | ---: | --- |"))
+        for item in runtime_queue[:50]:
+            run_ids = ", ".join(f"`{run_id}`" for run_id in item["run_ids"])
+            lines.append(f"| `{item['path']}` | {item['occurrences']} | {run_ids} |")
+    else:
+        lines.append("No runtime paths are relying on the no-test-match fallback.")
     lines.extend(
         (
             "",
@@ -379,6 +494,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"days={summary['observation_days']}; "
             f"scoped={summary['scoped_samples']}; "
             f"high_risk={summary['high_risk_samples']}; "
+            f"estimated_reduction={summary['candidate_estimated_work_reduction_ratio']}; "
+            f"full_avoided={summary['scoped_full_regressions_avoided']}; "
             f"unreviewed={len(summary['unreviewed_legacy_only_tests'])}; "
             f"ready={str(summary['automated_ready_for_explicit_cutover_review']).lower()}"
         )

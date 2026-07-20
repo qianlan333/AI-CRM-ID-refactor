@@ -47,7 +47,6 @@
     "tests/conftest.py",
     "docs/ci/test_scope_policy.yml",
     "docs/ci/test_scope_legacy_only_review.yml",
-    "docs/ci/pytest_duration_baseline.json",
     "tests/test_pytest_duration_baseline_builder.py",
     "tests/test_pytest_shard_selector.py",
     "tests/test_github_actions_expression_length.py",
@@ -81,6 +80,14 @@
     "package-lock.json"
   ],
   "exclusive_scope_overrides": [
+    {
+      "paths": [
+        "docs/ci/pytest_duration_baseline.json"
+      ],
+      "scopes": [
+        "pytest_duration_baseline"
+      ]
+    },
     {
       "paths": [
         "aicrm_next/integration_gateway/wecom_tag_live_gateway.py"
@@ -133,10 +140,12 @@
         "scripts/ci/audit_test_inventory.py",
         "scripts/ci/select_test_scope_v2.py",
         "scripts/ci/summarize_test_scope_shadow.py",
+        "scripts/ci/validate_pytest_duration_baseline_pr.py",
         "tests/test_convention_test_scope.py",
         "tests/test_select_test_scope.py",
         "tests/test_test_inventory_audit.py",
-        "tests/test_test_scope_shadow_summary.py"
+        "tests/test_test_scope_shadow_summary.py",
+        "tests/test_pytest_duration_baseline_pr_validation.py"
       ],
       "scopes": [
         "ci_scope_selector"
@@ -144,6 +153,21 @@
     }
   ],
   "scopes": [
+    {
+      "name": "pytest_duration_baseline",
+      "paths": [
+        "docs/ci/pytest_duration_baseline.json"
+      ],
+      "python_tests": [
+        "tests/test_pytest_duration_baseline_builder.py",
+        "tests/test_pytest_duration_baseline_pr_validation.py",
+        "tests/test_pytest_shard_selector.py",
+        "tests/test_test_inventory_audit.py",
+        "tests/test_ci_workflow_contract.py"
+      ],
+      "needs_postgres": false,
+      "architecture_gate": "fast"
+    },
     {
       "name": "critical_read_performance",
       "paths": [
@@ -1950,10 +1974,12 @@
         "scripts/ci/audit_test_inventory.py",
         "scripts/ci/select_test_scope_v2.py",
         "scripts/ci/summarize_test_scope_shadow.py",
+        "scripts/ci/validate_pytest_duration_baseline_pr.py",
         "tests/test_convention_test_scope.py",
         "tests/test_select_test_scope.py",
         "tests/test_test_inventory_audit.py",
-        "tests/test_test_scope_shadow_summary.py"
+        "tests/test_test_scope_shadow_summary.py",
+        "tests/test_pytest_duration_baseline_pr_validation.py"
       ],
       "python_tests": [
         "tests/test_convention_test_scope.py",
@@ -2010,6 +2036,7 @@
         "tests/test_id_validation_release_base_capture.py",
         "tests/test_id_validation_release_base_resolver.py",
         "tests/test_pytest_duration_baseline_builder.py",
+        "tests/test_pytest_duration_baseline_pr_validation.py",
         "tests/test_pytest_shard_selector.py",
         "tests/test_production_public_release_route.py",
         "tests/test_external_orders_blocker_diagnostics.py",
