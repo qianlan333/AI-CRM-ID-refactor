@@ -322,6 +322,90 @@ def test_failed_or_cancelled_upload_never_releases_final_welcome():
     assert final_status == "cancelled"
 
 
+def test_terminal_upload_settlement_closes_welcome_graph_and_settles_final_job():
+    materials = _seed_materials()
+    repository = SQLAlchemyWelcomeEffectGraphRepository(get_session_factory())
+    planned = repository.plan(_request("channel_entry:welcome-terminal-settlement", materials))
+    upload_id = planned["upload_effect_job_ids"][0]
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE external_effect_job SET status = 'blocked', completed_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (upload_id,),
+        )
+
+    result = repository.settle_effect(upload_id, status="blocked")
+
+    assert result["settled"] is True
+    assert planned["final_effect_job_id"] in result["cancelled_job_ids"]
+    with _connect() as connection:
+        final = connection.execute(
+            "SELECT status, row_version FROM external_effect_job WHERE id = %s",
+            (planned["final_effect_job_id"],),
+        ).fetchone()
+        graph = connection.execute(
+            "SELECT status FROM channel_welcome_effect_graph WHERE execution_id = %s",
+            (planned["execution_id"],),
+        ).fetchone()
+        event = connection.execute(
+            """
+            SELECT event_type, payload_json
+            FROM internal_event_outbox
+            WHERE idempotency_key = %s
+            """,
+            (
+                f"external_effect.settled:{planned['final_effect_job_id']}:cancelled:"
+                f"row-version-{final['row_version']}",
+            ),
+        ).fetchone()
+    assert final["status"] == "cancelled"
+    assert graph["status"] == "terminal"
+    assert event["event_type"] == "external_effect.settled"
+    assert event["payload_json"]["attempt_id"] == ""
+
+
+def test_terminal_final_welcome_fences_claimed_upload_and_cancels_queued_siblings():
+    materials = _seed_materials()
+    repository = SQLAlchemyWelcomeEffectGraphRepository(get_session_factory())
+    planned = repository.plan(_request("channel_entry:welcome-final-terminal", materials))
+    effects = SQLAlchemyExternalEffectRepository(get_session_factory())
+    claimed_upload_id = planned["upload_effect_job_ids"][0]
+    claimed = effects.acquire_job(claimed_upload_id, locked_by="welcome-review-race")
+    assert claimed is not None
+    assert claimed.status == "dispatching"
+    with _connect() as connection:
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET status = 'cancelled', cancel_requested_at = CURRENT_TIMESTAMP,
+                cancelled_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (planned["final_effect_job_id"],),
+        )
+
+    result = repository.settle_effect(planned["final_effect_job_id"], status="cancelled")
+
+    queued_siblings = set(planned["upload_effect_job_ids"][1:])
+    assert result["settled"] is True
+    assert set(result["cancelled_job_ids"]) == queued_siblings
+    assert result["cancel_requested_job_ids"] == [claimed_upload_id]
+    current = effects.get_job(claimed_upload_id)
+    assert current is not None
+    assert current.status == "dispatching"
+    assert current.cancel_requested_at
+    assert current.provider_call_started_at == ""
+    assert effects.begin_provider_attempt(job=claimed, request_summary={}) is None
+    settled = effects.settle_cancel(job=current)
+    assert settled is not None
+    assert settled.status == "cancelled"
+    with _connect() as connection:
+        siblings = connection.execute(
+            "SELECT id, status FROM external_effect_job WHERE id = ANY(%s) ORDER BY id",
+            (planned["upload_effect_job_ids"],),
+        ).fetchall()
+    assert [row["status"] for row in siblings] == ["cancelled", "cancelled", "cancelled"]
+
+
 def test_invalid_material_rolls_back_graph_and_all_jobs():
     missing = {"image": 999991, "attachment": 999992, "miniprogram": 999993, "link": 999994}
     request = _request("channel_entry:welcome-postgres-rollback", missing)

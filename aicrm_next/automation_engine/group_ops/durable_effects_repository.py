@@ -24,6 +24,9 @@ from aicrm_next.platform_foundation.external_effects.repo import (
     build_external_effect_repository,
 )
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.platform_foundation.external_effects.settlement_events import (
+    enqueue_external_effect_settled_rows_in_session,
+)
 from aicrm_next.platform_foundation.external_effects.test_receiver import (
     TEST_RECEIVER_PATH_PREFIX,
     canonical_payload_hash,
@@ -32,6 +35,11 @@ from aicrm_next.shared.db_session import get_session_factory
 from aicrm_next.shared.runtime import fixture_mode
 
 from .domain import clean_text, mask_sensitive_payload
+from .effect_graph_lifecycle_repository import (
+    InMemoryGroupOpsEffectGraphLifecycleMixin,
+    SQLAlchemyGroupOpsEffectGraphLifecycleMixin,
+    request_cancel_dispatching_group_ops_jobs_in_session,
+)
 from .external_effects import content_payload_summary, parse_external_effect_scheduled_at
 
 
@@ -116,7 +124,18 @@ class GroupOpsEffectGraphRepository(Protocol):
 
     def release_after_upload(self, upload_job_id: int, *, attempt_id: str = "") -> dict[str, Any]: ...
 
+    def settle_effect(self, effect_job_id: int, *, status: str, attempt_id: str = "") -> dict[str, Any]: ...
+
     def cancel(self, execution_id: str, *, actor: str, reason: str) -> dict[str, Any]: ...
+
+    def cancel_plan(
+        self,
+        plan_id: int,
+        *,
+        actor: str,
+        reason: str,
+        node_id: int | None = None,
+    ) -> dict[str, Any]: ...
 
 
 def _material_dependency_key(attachment: dict[str, Any]) -> str:
@@ -205,7 +224,7 @@ def _effect_response(
     }
 
 
-class SQLAlchemyGroupOpsEffectGraphRepository:
+class SQLAlchemyGroupOpsEffectGraphRepository(SQLAlchemyGroupOpsEffectGraphLifecycleMixin):
     def __init__(self, session_factory=None) -> None:
         self._session_factory = session_factory or get_session_factory()
 
@@ -234,6 +253,11 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
             }
         )
         with self._session_factory() as session:
+            if request.source_kind == "plan_node":
+                session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+                    {"lock_key": f"group_ops_plan_scope:{int(request.plan_id)}"},
+                )
             session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
                 {"lock_key": f"group_ops_effect_graph:{clean_text(request.idempotency_key)}"},
@@ -447,7 +471,14 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
             .all()
         )
         for graph in old_graphs:
-            session.execute(
+            request_cancel_dispatching_group_ops_jobs_in_session(
+                session,
+                graph_id=int(graph["id"]),
+                final_effect_job_id=int(graph["final_effect_job_id"] or 0),
+                actor=actor or "group_ops_plan_editor",
+                reason="group_ops_plan_version_superseded",
+            )
+            cancelled_rows = session.execute(
                 text(
                     """
                     UPDATE external_effect_job job
@@ -470,13 +501,14 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
                         UNION
                         SELECT :final_effect_job_id
                     )
-                      AND job.status IN ('planned', 'approved', 'queued', 'failed_retryable', 'blocked')
+                      AND job.status IN ('planned', 'approved', 'queued', 'failed_retryable')
                       AND job.provider_call_started_at IS NULL
                       AND NOT EXISTS (
                           SELECT 1 FROM external_effect_attempt attempt
                           WHERE attempt.job_id = job.id
                             AND attempt.provider_call_started_at IS NOT NULL
                       )
+                    RETURNING job.*
                     """
                 ),
                 {
@@ -484,7 +516,8 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
                     "final_effect_job_id": int(graph["final_effect_job_id"] or 0),
                     "actor": actor or "group_ops_plan_editor",
                 },
-            )
+            ).mappings().all()
+            enqueue_external_effect_settled_rows_in_session(session, cancelled_rows)
             session.execute(
                 text(
                     """
@@ -988,7 +1021,14 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
                 session.rollback()
                 return {"ok": False, "cancelled": False, "reason": "graph_not_found"}
             graph = dict(graph)
-            updated = (
+            cancel_requested = request_cancel_dispatching_group_ops_jobs_in_session(
+                session,
+                graph_id=int(graph["id"]),
+                final_effect_job_id=int(graph["final_effect_job_id"] or 0),
+                actor=clean_text(actor),
+                reason=clean_text(reason),
+            )
+            cancelled_rows = (
                 session.execute(
                     text(
                         """
@@ -1004,9 +1044,9 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
                         UNION
                         SELECT :final_effect_job_id
                     )
-                      AND job.status IN ('planned', 'approved', 'queued', 'failed_retryable', 'blocked')
+                      AND job.status IN ('planned', 'approved', 'queued', 'failed_retryable')
                       AND job.provider_call_started_at IS NULL
-                    RETURNING job.id
+                    RETURNING job.*
                     """
                     ),
                     {
@@ -1016,9 +1056,10 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
                         "reason": clean_text(reason),
                     },
                 )
-                .scalars()
+                .mappings()
                 .all()
             )
+            updated = enqueue_external_effect_settled_rows_in_session(session, cancelled_rows)
             session.execute(
                 text(
                     """
@@ -1035,10 +1076,10 @@ class SQLAlchemyGroupOpsEffectGraphRepository:
                 "cancelled": True,
                 "execution_id": graph["execution_id"],
                 "cancelled_job_ids": [int(item) for item in updated],
+                "cancel_requested_job_ids": [int(item) for item in cancel_requested],
             }
 
-
-class InMemoryGroupOpsEffectGraphRepository:
+class InMemoryGroupOpsEffectGraphRepository(InMemoryGroupOpsEffectGraphLifecycleMixin):
     def __init__(self, external_effect_repo: ExternalEffectRepository | None = None) -> None:
         self._effect_repo = external_effect_repo or build_external_effect_repository()
         self._service = ExternalEffectService(self._effect_repo)

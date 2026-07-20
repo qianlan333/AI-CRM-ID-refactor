@@ -270,6 +270,7 @@ class ExternalEffectWorker:
                     "reason": "dispatch_cancelled_before_provider",
                 },
                 "completion_event_queued": False,
+                "settlement_event_queued": bool(cancelled),
                 "real_external_call_executed": False,
             }
         dispatch_result = self._block_if_wecom_execution_disabled(job)
@@ -342,6 +343,7 @@ class ExternalEffectWorker:
                                 "reason": "dispatch_cancelled_before_provider",
                             },
                             "completion_event_queued": False,
+                            "settlement_event_queued": True,
                             "real_external_call_executed": False,
                         }
                 return {
@@ -445,6 +447,7 @@ class ExternalEffectWorker:
                 "job": updated.to_dict() if updated else job.to_dict(),
                 "post_success_continuation": continuation,
                 "completion_event_queued": False,
+                "settlement_event_queued": bool(updated),
                 "real_external_call_executed": dispatch_result.real_external_call_executed,
             }
         if completed is None:
@@ -464,6 +467,8 @@ class ExternalEffectWorker:
             "attempt": attempt.to_dict(),
             "post_success_continuation": continuation,
             "completion_event_queued": updated.status == "succeeded",
+            "settlement_event_queued": updated.status
+            in {"succeeded", "simulated", "unknown_after_dispatch", "failed_terminal", "blocked", "cancelled"},
             "real_external_call_executed": dispatch_result.real_external_call_executed,
         }
 

@@ -20,6 +20,10 @@ from .models import (
     utcnow,
 )
 from .completion_events import build_external_effect_completed_event
+from .settlement_events import (
+    EXTERNAL_EFFECT_TERMINAL_STATUSES,
+    build_external_effect_settled_event,
+)
 
 from .repo import (
     ExternalEffectRepository,
@@ -44,6 +48,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         self._attempts: list[dict[str, Any]] = []
         self._receipts: list[dict[str, Any]] = []
         self._completion_events: list[dict[str, Any]] = []
+        self._settlement_events: list[dict[str, Any]] = []
         self._next_id = 1
         self._next_attempt_id = 1
         self._next_receipt_id = 1
@@ -457,6 +462,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                         "updated_at": now,
                     }
                 )
+                if open_attempt is not None:
+                    self._record_terminal_events(_public_job(row), _public_attempt(open_attempt))
                 count += 1
             return count
 
@@ -639,16 +646,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 }
             )
             updated = _public_job(row)
-            if updated and status == "succeeded":
-                event = build_external_effect_completed_event(job=updated, attempt=attempt)
-                self._completion_events.append(
-                    {
-                        "event_type": event.event_type,
-                        "idempotency_key": event.idempotency_key,
-                        "aggregate_id": event.aggregate_id,
-                        "payload": dict(event.payload or {}),
-                    }
-                )
+            self._record_terminal_events(updated, attempt)
             return (updated, attempt) if updated else None
 
     def mark_dispatch_unknown(
@@ -702,14 +700,16 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                     "updated_at": now,
                 }
             )
-            return _public_job(row)
+            updated = _public_job(row)
+            self._record_terminal_events(updated, self.get_attempt(attempt_id) if attempt_id else None)
+            return updated
 
     def mark_dispatching(self, job_id: int, *, locked_by: str) -> ExternalEffectJob | None:
         return self.acquire_job(job_id, locked_by=locked_by)
 
     def mark_succeeded(self, job_id: int, *, attempt_id: str) -> ExternalEffectJob | None:
         now = public_datetime(utcnow())
-        return self._mutate(
+        updated = self._mutate(
             job_id,
             status="succeeded",
             last_attempt_id=_text(attempt_id),
@@ -720,12 +720,14 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             executed_at=now,
             completed_at=now,
         )
+        self._record_terminal_events(updated, self.get_attempt(attempt_id) if attempt_id else None)
+        return updated
 
     def mark_simulated(self, job_id: int, *, attempt_id: str, result_summary: dict[str, Any]) -> ExternalEffectJob | None:
         row = self._find(job_id)
         if row:
             row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
-        return self._mutate(
+        updated = self._mutate(
             job_id,
             status="simulated",
             last_attempt_id=_text(attempt_id),
@@ -739,6 +741,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             lease_expires_at="",
             completed_at=public_datetime(utcnow()),
         )
+        self._record_terminal_events(updated, self.get_attempt(attempt_id) if attempt_id else None)
+        return updated
 
     def mark_failed_retryable(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str, next_retry_at: datetime) -> ExternalEffectJob | None:
         row = self._find(job_id)
@@ -762,7 +766,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
         row = self._find(job_id)
         if row:
             row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
-        return self._mutate(
+        updated = self._mutate(
             job_id,
             status="failed_terminal",
             last_attempt_id=_text(attempt_id),
@@ -774,12 +778,14 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             lease_expires_at="",
             completed_at=public_datetime(utcnow()),
         )
+        self._record_terminal_events(updated, self.get_attempt(attempt_id) if attempt_id else None)
+        return updated
 
     def mark_blocked(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str) -> ExternalEffectJob | None:
         row = self._find(job_id)
         if row:
             row["attempt_count"] = int(row.get("attempt_count") or 0) + 1
-        return self._mutate(
+        updated = self._mutate(
             job_id,
             status="blocked",
             last_attempt_id=_text(attempt_id),
@@ -791,6 +797,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             lease_expires_at="",
             completed_at=public_datetime(utcnow()),
         )
+        self._record_terminal_events(updated, self.get_attempt(attempt_id) if attempt_id else None)
+        return updated
 
     def request_cancel(
         self,
@@ -826,7 +834,10 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                         "completed_at": now,
                     }
                 )
-            return self._mutate(job_id, **changes)
+            updated = self._mutate(job_id, **changes)
+            if updated and updated.status == "cancelled":
+                self._record_terminal_events(updated)
+            return updated
 
     def settle_cancel(self, *, job: ExternalEffectJob) -> ExternalEffectJob | None:
         with self._lock:
@@ -846,7 +857,7 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
             ):
                 return None
             now = public_datetime(utcnow())
-            return self._mutate(
+            updated = self._mutate(
                 job.id,
                 status="cancelled",
                 locked_by="",
@@ -858,6 +869,8 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
                 cancelled_at=now,
                 completed_at=now,
             )
+            self._record_terminal_events(updated)
+            return updated
 
     def cancel_job(
         self,
@@ -1098,6 +1111,37 @@ class InMemoryExternalEffectRepository(ExternalEffectRepository):
 
     def list_completion_events(self) -> list[dict[str, Any]]:
         return [dict(item) for item in self._completion_events]
+
+    def list_settlement_events(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in self._settlement_events]
+
+    def _record_terminal_events(
+        self,
+        job: ExternalEffectJob | None,
+        attempt: ExternalEffectAttempt | None = None,
+    ) -> None:
+        if job is None or job.status not in EXTERNAL_EFFECT_TERMINAL_STATUSES:
+            return
+        settled = build_external_effect_settled_event(job=job, attempt=attempt)
+        settled_item = {
+            "event_type": settled.event_type,
+            "idempotency_key": settled.idempotency_key,
+            "aggregate_id": settled.aggregate_id,
+            "payload": dict(settled.payload or {}),
+        }
+        if all(item["idempotency_key"] != settled_item["idempotency_key"] for item in self._settlement_events):
+            self._settlement_events.append(settled_item)
+        if job.status != "succeeded" or attempt is None:
+            return
+        completed = build_external_effect_completed_event(job=job, attempt=attempt)
+        completed_item = {
+            "event_type": completed.event_type,
+            "idempotency_key": completed.idempotency_key,
+            "aggregate_id": completed.aggregate_id,
+            "payload": dict(completed.payload or {}),
+        }
+        if all(item["idempotency_key"] != completed_item["idempotency_key"] for item in self._completion_events):
+            self._completion_events.append(completed_item)
 
     def _find(self, job_id: int) -> dict[str, Any] | None:
         for row in self._jobs:

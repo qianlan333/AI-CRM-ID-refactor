@@ -1811,7 +1811,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Tracks consumer execution state for internal_event. Relay creates the exact manifest-declared set atomically; manifest-aware reconciliation may only restore missing declared rows without executing handlers. Each external_effect.completed continuation owns an independent row and retry budget; predicate misses succeed as no-op, while the former first-match consumer name is a history-only handler alias excluded from new manifests. Revision 0131 holds and classifies all nonterminal work created under the former contract. Automatic due is limited to pending, due failed_retryable, and stale running; failed_terminal/blocked require audited manual action. Revision 0125 makes available_at mandatory and constrains lane to internal_general or internal_financial.
+    notes: Tracks consumer execution state for internal_event. Relay creates the exact manifest-declared set atomically; manifest-aware reconciliation may only restore missing declared rows without executing handlers. Each external_effect.completed continuation owns an independent success-only row and retry budget; external_effect.settled independently fans every terminal status to the Identity, Group Ops, Welcome, Broadcast, and External Push parent projections without provider-result access. Predicate misses succeed as no-op, while the former first-match consumer name is a history-only handler alias excluded from new manifests. Revision 0131 holds and classifies all nonterminal work created under the former contract. Automatic due is limited to pending, due failed_retryable, and stale running; failed_terminal/blocked require audited manual action. Revision 0125 makes available_at mandatory and constrains lane to internal_general or internal_financial.
 
   internal_event_consumer_attempt:
     domain: internal_events
@@ -2144,7 +2144,7 @@ tables:
     guard_tests:
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_event_effect_table_lineage.py
-    notes: Canonical queue for real external side effects. Scheduler, realtime, and manual dispatch share lease-token CAS; uncertain outcomes are quarantined for reconciliation and fake outcomes are simulated. Revision 0125 makes available_at mandatory and constrains lane to the four external-effect lanes. Unified timeline reads summary projections only and applies centralized sensitive-data redaction; provider request payloads are excluded.
+    notes: Canonical queue for real external side effects. Scheduler, realtime, and manual dispatch share lease-token CAS; uncertain outcomes are quarantined for reconciliation and fake outcomes are simulated. Every new runtime terminal transition transactionally emits payload-minimal external_effect.settled; succeeded also retains the provider-result-gated external_effect.completed hand-off. Revision 0125 makes available_at mandatory and constrains lane to the four external-effect lanes. Unified timeline reads summary projections only and applies centralized sensitive-data redaction; provider request payloads are excluded.
 
   external_effect_attempt:
     domain: external_effects
@@ -4773,13 +4773,14 @@ tables:
       - Group Ops direct send command
       - Group Ops future plan materializer
       - Group Ops media completion continuation
+      - external_effect.settled terminal continuation
     migration_source: 0127_group_ops_durable_effect_graph
     pii_level: none
     guard_tests:
       - tests/test_group_ops_durable_effect_graph.py
       - tests/test_group_ops_durable_effect_graph_postgres.py
       - tests/test_data_table_lifecycle_guard.py
-    notes: Stores public execution identifiers, plan and node versions, schedule and the final External Effect link. Provider payload and recipient content remain in their canonical execution facts.
+    notes: Stores public execution identifiers, revision-aware plan and node versions, schedule and the final External Effect link. Content, owner, schedule and active-binding changes cancel the old pre-provider graph before materializing a new version; provider-boundary truth is preserved. Terminal child settlements close the graph and cancel unreleased siblings transactionally. Provider payload and recipient content remain in their canonical execution facts.
 
   automation_group_ops_effect_material:
     domain: automation_engine_group_ops
@@ -4815,6 +4816,7 @@ tables:
     runtime_entrypoints:
       - Group Ops effect graph planning
       - external_effect.completed continuation
+      - external_effect.settled continuation
     migration_source: 0127_group_ops_durable_effect_graph
     pii_level: none
     status_enum:
@@ -4824,7 +4826,7 @@ tables:
       - tests/test_group_ops_durable_effect_graph_postgres.py
       - tests/test_data_table_lifecycle_guard.py
       - tests/test_data_health_checks.py::test_migrated_schema_matches_lifecycle_manifest
-    notes: CAS-updated dependency state. Only every prerequisite succeeded may release the final planned effect; failed, cancelled and superseded graphs cannot release.
+    notes: CAS-updated dependency state. Only every prerequisite succeeded may release the final planned effect; failed, cancelled and superseded graphs cannot release. A non-success prerequisite settlement marks the graph terminal and emits attemptless settlements for every sibling cancelled before provider dispatch.
 
   channel_welcome_effect_graph:
     domain: channel_entry
@@ -4840,13 +4842,14 @@ tables:
     runtime_entrypoints:
       - channel welcome effect planning
       - external_effect.completed continuation
+      - external_effect.settled continuation
       - channel welcome cancellation command
     migration_source: 0130_welcome_media_dependencies
     pii_level: internal_contact
     guard_tests:
       - tests/test_channel_welcome_media_dependencies_postgres.py
       - tests/test_data_table_lifecycle_guard.py
-    notes: Stores only the public execution link, channel reference and final effect owner. Provider identity, payload and content remain in the external-effect boundary.
+    notes: Stores only the public execution link, channel reference and final effect owner. Non-success child settlements close the graph and transactionally settle siblings cancelled before the provider boundary. Provider identity, payload and content remain in the external-effect boundary.
 
   channel_welcome_effect_dependency:
     domain: channel_entry

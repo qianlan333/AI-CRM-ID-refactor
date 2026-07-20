@@ -7,6 +7,13 @@ from uuid import uuid4
 
 from aicrm_next.shared.release import current_release_sha
 from aicrm_next.shared.runtime import raw_database_url
+from aicrm_next.platform_foundation.external_effects.repo_contract import _public_attempt, _public_job
+from aicrm_next.platform_foundation.external_effects.settlement_events import (
+    build_external_effect_settled_event,
+)
+from aicrm_next.platform_foundation.internal_events.outbox import (
+    enqueue_transactional_internal_event_outbox,
+)
 
 
 def normalize_runtime_database_url(value: str) -> str:
@@ -422,7 +429,7 @@ class ExecutionRuntimeRepository:
                 """,
                 (lane,),
             )
-            connection.execute(
+            unknown_rows = connection.execute(
                 """
                 UPDATE external_effect_job
                 SET status = 'unknown_after_dispatch',
@@ -443,9 +450,23 @@ class ExecutionRuntimeRepository:
                   AND lease_expires_at IS NOT NULL
                   AND lease_expires_at <= CURRENT_TIMESTAMP
                   AND provider_call_started_at IS NOT NULL
+                RETURNING *
                 """,
                 (lane,),
-            )
+            ).fetchall()
+            for unknown_row in unknown_rows:
+                job = _public_job(dict(unknown_row))
+                if job is None:
+                    raise RuntimeError("stale external effect settlement job projection failed")
+                attempt_row = connection.execute(
+                    "SELECT * FROM external_effect_attempt WHERE attempt_id = %s AND job_id = %s",
+                    (job.last_attempt_id, int(job.id)),
+                ).fetchone()
+                attempt = _public_attempt(dict(attempt_row)) if attempt_row else None
+                enqueue_transactional_internal_event_outbox(
+                    connection,
+                    build_external_effect_settled_event(job=job, attempt=attempt),
+                )
             connection.execute(
                 """
                 UPDATE external_effect_job

@@ -22,12 +22,14 @@ from aicrm_next.customer_read_model.refresh_intents import (
 )
 from aicrm_next.external_effect_composition import (
     IDENTITY_EXTERNAL_EFFECT_CONTINUATION_CONSUMER,
+    IDENTITY_EXTERNAL_EFFECT_SETTLEMENT_CONSUMER,
     build_external_effect_continuation_consumers,
 )
 from aicrm_next import internal_event_composition
 from aicrm_next.internal_event_composition import build_internal_event_consumer_registry
 from aicrm_next.platform_foundation.external_effects.adapters import WeComExternalContactDetailAdapter
 from aicrm_next.platform_foundation.external_effects.completion_events import EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE
+from aicrm_next.platform_foundation.external_effects.settlement_events import EXTERNAL_EFFECT_SETTLED_EVENT_TYPE
 from aicrm_next.platform_foundation.external_effects import wecom_canary_policy
 from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
@@ -182,6 +184,62 @@ def test_identity_detail_is_idempotent_per_event_and_new_after_readd() -> None:
     assert [row["source_event_id"] for row in effect_rows] == ["8101", "8102"]
     assert len({row["source_key"] for row in queue_rows}) == 2
     assert len({row["idempotency_key"] for row in effect_rows}) == 2
+
+
+def test_terminal_identity_effect_durably_holds_parent_queue() -> None:
+    planned = _identity_plan("wm_identity_terminal_001")
+    repository = SQLAlchemyExternalEffectRepository()
+    job = repository.get_job(int(planned["external_effect_job_id"]))
+    assert job is not None
+    attempt = repository.record_attempt(
+        job=job,
+        status="blocked",
+        adapter_mode="disabled",
+        request_summary={"policy_checked": True},
+        response_summary={"blocked": True},
+        error_code="identity_provider_disabled",
+        error_message="provider disabled",
+    )
+    blocked = repository.mark_blocked(
+        job.id,
+        attempt_id=attempt.attempt_id,
+        error_code="identity_provider_disabled",
+        error_message="provider disabled",
+    )
+    assert blocked is not None and blocked.status == "blocked"
+
+    registry = build_internal_event_consumer_registry()
+    relayed = InternalEventOutboxRelay(consumer_registry=registry).relay_due(limit=10)
+    assert relayed["counts"]["relayed_count"] == 1
+    events, event_count = InternalEventService().list_events(
+        {"event_type": EXTERNAL_EFFECT_SETTLED_EVENT_TYPE}
+    )
+    assert event_count == 1
+    runs, run_count = InternalEventService().list_consumer_runs({"event_id": events[0].event_id})
+    assert any(
+        run.consumer_name == IDENTITY_EXTERNAL_EFFECT_SETTLEMENT_CONSUMER
+        for run in runs
+    )
+    assert run_count == 5
+    worker = InternalEventWorker(consumer_registry=registry)
+    for run in runs:
+        result = worker.dispatch_one(run)
+        assert result["consumer_run"]["status"] == "succeeded"
+
+    with _connect() as connection:
+        queue = connection.execute(
+            """
+            SELECT status, hold_reason, next_attempt_at
+            FROM crm_user_identity_resolution_queue
+            WHERE id = %s
+            """,
+            (int(planned["queue_id"]),),
+        ).fetchone()
+    assert queue == {
+        "status": "held",
+        "hold_reason": "identity_provider_disabled",
+        "next_attempt_at": None,
+    }
 
 
 class _Provider:
@@ -359,7 +417,7 @@ def test_provider_result_is_private_and_continuation_failure_cannot_pollute_prov
     )
     internal_registry = build_internal_event_consumer_registry()
     relayed = InternalEventOutboxRelay(consumer_registry=internal_registry).relay_due(limit=20)
-    assert relayed["counts"]["relayed_count"] == 1
+    assert relayed["counts"]["relayed_count"] == 2
     completion_events, completion_event_count = InternalEventService().list_events(
         {"event_type": EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE}
     )

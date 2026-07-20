@@ -10,6 +10,7 @@ from aicrm_next.external_effect_composition import (
     EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST,
     build_external_effect_continuation_consumers,
     build_external_effect_continuation_registry,
+    build_external_effect_settlement_consumers,
 )
 from aicrm_next.platform_foundation.execution_runtime.read_model import (
     TIMELINE_MAX_EXECUTION_NODES,
@@ -22,6 +23,10 @@ from aicrm_next.platform_foundation.external_effects.completion_events import (
 from aicrm_next.platform_foundation.external_effects.models import ExternalEffectDispatchResult
 from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
+from aicrm_next.platform_foundation.external_effects.settlement_events import (
+    EXTERNAL_EFFECT_SETTLED_EVENT_TYPE,
+    register_external_effect_settled_consumers,
+)
 from aicrm_next.platform_foundation.internal_events.consumer_registry import (
     InternalEventConsumerRegistry,
 )
@@ -47,6 +52,11 @@ def _completion_registry() -> InternalEventConsumerRegistry:
         repository_factory=SQLAlchemyExternalEffectRepository,
         legacy_continuation_registry_factory=build_external_effect_continuation_registry,
         provider_result_access_allowlist=EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST,
+    )
+    register_external_effect_settled_consumers(
+        registry,
+        consumers=build_external_effect_settlement_consumers(),
+        repository_factory=SQLAlchemyExternalEffectRepository,
     )
     registry.seal_fanout_contract()
     return registry
@@ -95,8 +105,9 @@ def test_external_effect_root_recursively_includes_completion_fanout_and_attempt
         locked_by="timeline-recursive-relay",
     ).relay_due(limit=10)
     assert relay["ok"] is True
-    assert relay["counts"]["relayed_count"] == 1
+    assert relay["counts"]["relayed_count"] == 2
     assert relay["items"][0]["consumer_run_count"] == 7
+    assert relay["items"][1]["consumer_run_count"] == 5
 
     runs = internal_repo.acquire_due_runs(
         limit=10,
@@ -105,6 +116,9 @@ def test_external_effect_root_recursively_includes_completion_fanout_and_attempt
     )
     expected_consumers = {
         consumer.consumer_name for consumer in build_external_effect_continuation_consumers()
+    }
+    expected_settlement_consumers = {
+        consumer.consumer_name for consumer in build_external_effect_settlement_consumers()
     }
     assert {run.consumer_name for run in runs} == expected_consumers
     assert len(runs) == 7
@@ -128,6 +142,14 @@ def test_external_effect_root_recursively_includes_completion_fanout_and_attempt
             """,
             (EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE, root_execution_id),
         ).fetchone()
+        settlement = connection.execute(
+            """
+            SELECT execution_id
+            FROM internal_event
+            WHERE event_type = %s AND parent_execution_id = %s
+            """,
+            (EXTERNAL_EFFECT_SETTLED_EVENT_TYPE, root_execution_id),
+        ).fetchone()
         run_rows = connection.execute(
             """
             SELECT execution_id
@@ -150,9 +172,9 @@ def test_external_effect_root_recursively_includes_completion_fanout_and_attempt
     kinds = [item["item_kind"] for item in items]
     assert kinds.count("external_effect") == 1
     assert kinds.count("external_effect_attempt") == 1
-    assert kinds.count("internal_outbox") == 1
-    assert kinds.count("internal_event") == 1
-    assert kinds.count("internal_consumer_run") == 7
+    assert kinds.count("internal_outbox") == 2
+    assert kinds.count("internal_event") == 2
+    assert kinds.count("internal_consumer_run") == 12
     assert kinds.count("internal_consumer_attempt") == 7
     completion_items = [
         item
@@ -162,13 +184,22 @@ def test_external_effect_root_recursively_includes_completion_fanout_and_attempt
     ]
     assert len(completion_items) == 1
     assert completion_items[0]["parent_execution_id"] == root_execution_id
+    settlement_items = [
+        item
+        for item in items
+        if item["item_kind"] == "internal_event"
+        and item["item_type"] == EXTERNAL_EFFECT_SETTLED_EVENT_TYPE
+    ]
+    assert len(settlement_items) == 1
+    assert settlement_items[0]["parent_execution_id"] == root_execution_id
+    assert settlement["execution_id"] == settlement_items[0]["execution_id"]
     assert {
         item["item_type"] for item in items if item["item_kind"] == "internal_consumer_run"
-    } == expected_consumers
+    } == expected_consumers | expected_settlement_consumers
     assert len({(item["item_kind"], item["item_id"]) for item in items}) == len(items)
     assert timeline["graph"] == {
-        "execution_node_count": 9,
-        "edge_count": 9,
+        "execution_node_count": 15,
+        "edge_count": 15,
         "max_depth_reached": 2,
         "max_depth": 12,
         "max_execution_nodes": 256,
@@ -182,10 +213,10 @@ def test_external_effect_root_recursively_includes_completion_fanout_and_attempt
         run_rows[0]["execution_id"]
     )
     assert leaf_timeline is not None
-    assert leaf_timeline["graph"]["execution_node_count"] == 9
+    assert leaf_timeline["graph"]["execution_node_count"] == 15
     assert sum(
         item["item_kind"] == "internal_consumer_run" for item in leaf_timeline["items"]
-    ) == 7
+    ) == 12
 
 
 class _FakeRows:

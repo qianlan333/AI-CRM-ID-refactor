@@ -26,6 +26,80 @@ def _matches(job, _result) -> bool:
     return job.effect_type == WECOM_EXTERNAL_CONTACT_DETAIL_FETCH
 
 
+def _matches_terminal_identity(job, result) -> bool:
+    return _matches(job, result) and job.status != "succeeded"
+
+
+def _settle_terminal_identity(job, _dispatch_result) -> dict[str, Any]:
+    payload = dict(job.payload_json or {})
+    queue_id = int(payload.get("queue_id") or job.business_id or 0)
+    if queue_id <= 0:
+        return {"ok": False, "error": "identity_resolution_queue_id_missing"}
+    target_status = {
+        "unknown_after_dispatch": "held",
+        "blocked": "held",
+        "failed_terminal": "failed",
+        "cancelled": "ignored",
+        "simulated": "ignored",
+    }.get(_text(job.status))
+    if not target_status:
+        return {"ok": True, "projected": False, "reason": "identity_effect_status_not_terminal"}
+    error_code = _text(job.last_error_code) or f"external_effect_{_text(job.status)}"
+    with get_session_factory()() as session:
+        queue_row = session.execute(
+            text(
+                """
+                UPDATE crm_user_identity_resolution_queue
+                SET status = :status,
+                    last_error = :last_error,
+                    next_attempt_at = NULL,
+                    hold_reason = CASE WHEN :status = 'held' THEN :last_error ELSE '' END,
+                    held_at = CASE WHEN :status = 'held' THEN COALESCE(held_at, CURRENT_TIMESTAMP) ELSE held_at END,
+                    completed_at = CASE WHEN :status IN ('failed', 'ignored') THEN COALESCE(completed_at, CURRENT_TIMESTAMP) ELSE completed_at END,
+                    row_version = row_version + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :queue_id
+                  AND external_effect_job_id = :job_id
+                  AND status IN ('pending', 'polling')
+                RETURNING id
+                """
+            ),
+            {
+                "status": target_status,
+                "last_error": error_code,
+                "queue_id": queue_id,
+                "job_id": int(job.id),
+            },
+        ).scalar_one_or_none()
+        runtime_count = session.execute(
+            text(
+                """
+                UPDATE automation_channel_entry_runtime
+                SET identity_status = :status,
+                    identity_hold_reason = CASE WHEN :status = 'held' THEN :last_error ELSE '' END,
+                    identity_held_at = CASE WHEN :status = 'held' THEN COALESCE(identity_held_at, CURRENT_TIMESTAMP) ELSE identity_held_at END,
+                    identity_next_attempt_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE identity_external_effect_job_id = :job_id
+                  AND identity_status NOT IN ('resolved', 'conflict')
+                """
+            ),
+            {
+                "status": target_status,
+                "last_error": error_code,
+                "job_id": int(job.id),
+            },
+        ).rowcount
+        session.commit()
+    return {
+        "ok": True,
+        "projected": bool(queue_row or runtime_count),
+        "queue_id": queue_id,
+        "queue_status": target_status,
+        "runtime_updated_count": int(runtime_count or 0),
+    }
+
+
 def _run(job, dispatch_result) -> dict[str, Any]:
     try:
         return _run_private(job, dispatch_result)
@@ -276,8 +350,15 @@ IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION = ExternalEffectContinuation(
     requires_provider_result=True,
 )
 
+IDENTITY_EXTERNAL_EFFECT_SETTLEMENT_CONTINUATION = ExternalEffectContinuation(
+    name="identity_external_effect_settlement",
+    matches=_matches_terminal_identity,
+    run=_settle_terminal_identity,
+)
+
 
 __all__ = [
     "IDENTITY_EXTERNAL_CONTACT_DETAIL_CONTINUATION",
+    "IDENTITY_EXTERNAL_EFFECT_SETTLEMENT_CONTINUATION",
     "IDENTITY_RESOLVED_EVENT_TYPE",
 ]

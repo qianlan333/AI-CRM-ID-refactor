@@ -24,7 +24,7 @@ from .models import (
     public_datetime,
     utcnow,
 )
-from .completion_events import build_external_effect_completed_event
+from .settlement_events import enqueue_external_effect_terminal_events_in_session
 from .canary_repository import ExternalEffectCanaryAuthorizationRepositoryMixin
 from .direct_claim_repository import ExternalEffectDirectClaimRepositoryMixin
 from .provider_result_repository import ExternalEffectProviderResultRepositoryMixin, encode_provider_result
@@ -44,7 +44,6 @@ from .repo_contract import (
     _safe_error_message,
     _text,
 )
-
 class SQLAlchemyExternalEffectRepository(
     ExternalEffectCanaryAuthorizationRepositoryMixin,
     ExternalEffectDirectClaimRepositoryMixin,
@@ -522,7 +521,7 @@ class SQLAlchemyExternalEffectRepository(
                           AND lease_token = :lease_token
                           AND lease_expires_at IS NOT NULL
                           AND lease_expires_at <= CURRENT_TIMESTAMP
-                        RETURNING id
+                        RETURNING *
                     """
                 else:
                     update_statement = """
@@ -547,13 +546,28 @@ class SQLAlchemyExternalEffectRepository(
                           AND lease_token = :lease_token
                           AND lease_expires_at IS NOT NULL
                           AND lease_expires_at <= CURRENT_TIMESTAMP
-                        RETURNING id
+                        RETURNING *
                     """
-                updated = session.execute(
+                updated_row = session.execute(
                     text(update_statement),
                     {"job_id": int(stale["id"]), "lease_token": lease_token},
-                ).fetchone()
-                count += 1 if updated else 0
+                ).mappings().first()
+                if updated_row and provider_boundary_crossed:
+                    updated = _public_job(dict(updated_row))
+                    attempt_row = session.execute(
+                        text(
+                            "SELECT * FROM external_effect_attempt WHERE attempt_id = :attempt_id AND job_id = :job_id"
+                        ),
+                        {"attempt_id": attempt_id, "job_id": int(stale["id"])},
+                    ).mappings().first()
+                    attempt = _public_attempt(dict(attempt_row)) if attempt_row else None
+                    if updated is not None:
+                        enqueue_external_effect_terminal_events_in_session(
+                            session,
+                            job=updated,
+                            attempt=attempt,
+                        )
+                count += 1 if updated_row else 0
             session.commit()
             return count
 
@@ -888,15 +902,11 @@ class SQLAlchemyExternalEffectRepository(
                 result=result,
                 blocked_until=next_retry_at,
             )
-            if status == "succeeded":
-                from aicrm_next.platform_foundation.internal_events.outbox import (
-                    enqueue_internal_event_outbox_in_session,
-                )
-
-                enqueue_internal_event_outbox_in_session(
-                    session,
-                    build_external_effect_completed_event(job=updated, attempt=attempt),
-                )
+            enqueue_external_effect_terminal_events_in_session(
+                session,
+                job=updated,
+                attempt=attempt,
+            )
             session.commit()
             return updated, attempt
 
@@ -994,21 +1004,39 @@ class SQLAlchemyExternalEffectRepository(
             if not updated_row:
                 session.rollback()
                 return None
+            updated = _public_job(dict(updated_row))
+            attempt = None
+            if last_attempt_id:
+                attempt_row = session.execute(
+                    text(
+                        "SELECT * FROM external_effect_attempt WHERE attempt_id = :attempt_id AND job_id = :job_id"
+                    ),
+                    {"attempt_id": last_attempt_id, "job_id": int(job.id)},
+                ).mappings().first()
+                attempt = _public_attempt(dict(attempt_row)) if attempt_row else None
+            if updated is None:
+                session.rollback()
+                return None
+            enqueue_external_effect_terminal_events_in_session(
+                session,
+                job=updated,
+                attempt=attempt,
+            )
             session.commit()
-            return _public_job(dict(updated_row))
+            return updated
 
     def mark_dispatching(self, job_id: int, *, locked_by: str) -> ExternalEffectJob | None:
         return self.acquire_job(job_id, locked_by=locked_by)
 
     def mark_succeeded(self, job_id: int, *, attempt_id: str) -> ExternalEffectJob | None:
-        return self._update(
+        return self._update_terminal(
             job_id,
             "status = 'succeeded', last_attempt_id = :attempt_id, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, executed_at = CURRENT_TIMESTAMP, completed_at = CURRENT_TIMESTAMP",
             {"attempt_id": _text(attempt_id)},
         )
 
     def mark_simulated(self, job_id: int, *, attempt_id: str, result_summary: dict[str, Any]) -> ExternalEffectJob | None:
-        return self._update(
+        return self._update_terminal(
             job_id,
             "status = 'simulated', attempt_count = attempt_count + 1, last_attempt_id = :attempt_id, side_effect_executed = FALSE, provider_result_received = FALSE, result_summary_json = CAST(:result_summary AS jsonb), reconciliation_required = FALSE, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, completed_at = CURRENT_TIMESTAMP",
             {"attempt_id": _text(attempt_id), "result_summary": _json_dumps(scrub_summary(result_summary or {}))},
@@ -1027,14 +1055,14 @@ class SQLAlchemyExternalEffectRepository(
         )
 
     def mark_failed_terminal(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str) -> ExternalEffectJob | None:
-        return self._update(
+        return self._update_terminal(
             job_id,
             "status = 'failed_terminal', attempt_count = attempt_count + 1, last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, completed_at = CURRENT_TIMESTAMP",
             {"attempt_id": _text(attempt_id), "error_code": _text(error_code), "error_message": _safe_error_message(error_message)},
         )
 
     def mark_blocked(self, job_id: int, *, attempt_id: str, error_code: str, error_message: str) -> ExternalEffectJob | None:
-        return self._update(
+        return self._update_terminal(
             job_id,
             "status = 'blocked', attempt_count = attempt_count + 1, last_attempt_id = :attempt_id, last_error_code = :error_code, last_error_message = :error_message, locked_by = '', locked_at = NULL, lease_token = '', lease_expires_at = NULL, completed_at = CURRENT_TIMESTAMP",
             {"attempt_id": _text(attempt_id), "error_code": _text(error_code), "error_message": _safe_error_message(error_message)},
@@ -1049,67 +1077,84 @@ class SQLAlchemyExternalEffectRepository(
         expected_version: int | None = None,
     ) -> ExternalEffectJob | None:
         version_clause = "AND row_version = :expected_version" if expected_version is not None else ""
-        return _public_job(
-            self._write_one(
-                f"""
-                UPDATE external_effect_job
-                SET cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
-                    cancel_requested_by = CASE
-                        WHEN cancel_requested_by = '' THEN :actor ELSE cancel_requested_by
-                    END,
-                    cancel_reason = CASE WHEN cancel_reason = '' THEN :reason ELSE cancel_reason END,
-                    status = CASE WHEN status = 'dispatching' THEN status ELSE 'cancelled' END,
-                    locked_by = CASE WHEN status = 'dispatching' THEN locked_by ELSE '' END,
-                    locked_at = CASE WHEN status = 'dispatching' THEN locked_at ELSE NULL END,
-                    lease_token = CASE WHEN status = 'dispatching' THEN lease_token ELSE '' END,
-                    lease_expires_at = CASE WHEN status = 'dispatching' THEN lease_expires_at ELSE NULL END,
-                    cancelled_at = CASE WHEN status = 'dispatching' THEN cancelled_at ELSE CURRENT_TIMESTAMP END,
-                    completed_at = CASE WHEN status = 'dispatching' THEN completed_at ELSE CURRENT_TIMESTAMP END,
-                    row_version = row_version + 1,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = :job_id
-                  AND status IN ('planned', 'approved', 'queued', 'failed_retryable', 'dispatching')
-                  {version_clause}
-                RETURNING *
-                """,
+        with self._session_factory() as session:
+            row = session.execute(
+                text(
+                    f"""
+                    UPDATE external_effect_job
+                    SET cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
+                        cancel_requested_by = CASE
+                            WHEN cancel_requested_by = '' THEN :actor ELSE cancel_requested_by
+                        END,
+                        cancel_reason = CASE WHEN cancel_reason = '' THEN :reason ELSE cancel_reason END,
+                        status = CASE WHEN status = 'dispatching' THEN status ELSE 'cancelled' END,
+                        locked_by = CASE WHEN status = 'dispatching' THEN locked_by ELSE '' END,
+                        locked_at = CASE WHEN status = 'dispatching' THEN locked_at ELSE NULL END,
+                        lease_token = CASE WHEN status = 'dispatching' THEN lease_token ELSE '' END,
+                        lease_expires_at = CASE WHEN status = 'dispatching' THEN lease_expires_at ELSE NULL END,
+                        cancelled_at = CASE WHEN status = 'dispatching' THEN cancelled_at ELSE CURRENT_TIMESTAMP END,
+                        completed_at = CASE WHEN status = 'dispatching' THEN completed_at ELSE CURRENT_TIMESTAMP END,
+                        row_version = row_version + 1,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = :job_id
+                      AND status IN ('planned', 'approved', 'queued', 'failed_retryable', 'dispatching')
+                      {version_clause}
+                    RETURNING *
+                    """
+                ),
                 {
                     "job_id": int(job_id),
                     "actor": _text(actor),
                     "reason": _safe_error_message(reason),
                     "expected_version": int(expected_version or 0),
                 },
-            )
-        )
+            ).mappings().first()
+            updated = _public_job(dict(row)) if row else None
+            if updated is None:
+                session.rollback()
+                return None
+            if updated.status == "cancelled":
+                enqueue_external_effect_terminal_events_in_session(session, job=updated)
+            session.commit()
+            return updated
 
     def settle_cancel(self, *, job: ExternalEffectJob) -> ExternalEffectJob | None:
-        return _public_job(
-            self._write_one(
-                """
-                UPDATE external_effect_job j
-                SET status = 'cancelled',
-                    locked_by = '', locked_at = NULL,
-                    lease_token = '', lease_expires_at = NULL,
-                    heartbeat_at = NULL, worker_generation = 0,
-                    cancelled_at = CURRENT_TIMESTAMP,
-                    completed_at = CURRENT_TIMESTAMP,
-                    row_version = row_version + 1,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE j.id = :job_id
-                  AND j.status = 'dispatching'
-                  AND j.lease_token = :lease_token
-                  AND j.cancel_requested_at IS NOT NULL
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM external_effect_attempt a
-                      WHERE a.job_id = j.id
-                        AND a.attempt_id = j.last_attempt_id
-                        AND a.status = 'dispatching'
-                  )
-                RETURNING j.*
-                """,
+        with self._session_factory() as session:
+            row = session.execute(
+                text(
+                    """
+                    UPDATE external_effect_job j
+                    SET status = 'cancelled',
+                        locked_by = '', locked_at = NULL,
+                        lease_token = '', lease_expires_at = NULL,
+                        heartbeat_at = NULL, worker_generation = 0,
+                        cancelled_at = CURRENT_TIMESTAMP,
+                        completed_at = CURRENT_TIMESTAMP,
+                        row_version = row_version + 1,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE j.id = :job_id
+                      AND j.status = 'dispatching'
+                      AND j.lease_token = :lease_token
+                      AND j.cancel_requested_at IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM external_effect_attempt a
+                          WHERE a.job_id = j.id
+                            AND a.attempt_id = j.last_attempt_id
+                            AND a.status = 'dispatching'
+                      )
+                    RETURNING j.*
+                    """
+                ),
                 {"job_id": int(job.id), "lease_token": _text(job.lease_token)},
-            )
-        )
+            ).mappings().first()
+            updated = _public_job(dict(row)) if row else None
+            if updated is None:
+                session.rollback()
+                return None
+            enqueue_external_effect_terminal_events_in_session(session, job=updated)
+            session.commit()
+            return updated
 
     def cancel_job(
         self,
@@ -1395,6 +1440,46 @@ class SQLAlchemyExternalEffectRepository(
             {**params, "job_id": int(job_id)},
         )
         return _public_job(row)
+
+    def _update_terminal(self, job_id: int, set_sql: str, params: dict[str, Any]) -> ExternalEffectJob | None:
+        with self._session_factory() as session:
+            row = (
+                session.execute(
+                    text(
+                        f"""
+                        UPDATE external_effect_job
+                        SET {set_sql},
+                            row_version = row_version + 1,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :job_id
+                        RETURNING *
+                        """
+                    ),
+                    {**params, "job_id": int(job_id)},
+                )
+                .mappings()
+                .first()
+            )
+            updated = _public_job(dict(row)) if row else None
+            if updated is None:
+                session.rollback()
+                return None
+            attempt = None
+            if _text(updated.last_attempt_id):
+                attempt_row = session.execute(
+                    text(
+                        "SELECT * FROM external_effect_attempt WHERE attempt_id = :attempt_id AND job_id = :job_id"
+                    ),
+                    {"attempt_id": updated.last_attempt_id, "job_id": int(updated.id)},
+                ).mappings().first()
+                attempt = _public_attempt(dict(attempt_row)) if attempt_row else None
+            enqueue_external_effect_terminal_events_in_session(
+                session,
+                job=updated,
+                attempt=attempt,
+            )
+            session.commit()
+            return updated
 
 
 from .repo_memory import InMemoryExternalEffectRepository

@@ -1814,6 +1814,12 @@ def test_internal_event_worker_systemd_units_are_deployable():
     assert "external_effect.completed:external_effect_automation_continuation_consumer" in service
     # Kept only while held pre-0131 runs may require an audited manual release.
     assert "external_effect.completed:external_effect_completion_continuation_consumer" in service
+    assert "external_effect.settled" in service
+    assert "external_effect.settled:external_effect_identity_settlement_consumer" in service
+    assert "external_effect.settled:external_effect_group_ops_settlement_consumer" in service
+    assert "external_effect.settled:external_effect_welcome_settlement_consumer" in service
+    assert "external_effect.settled:external_effect_broadcast_settlement_consumer" in service
+    assert "external_effect.settled:external_effect_external_push_settlement_consumer" in service
     assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
     assert "ExecStart=/usr/bin/env" in service
     assert "/home/ubuntu/venvs/openclaw/bin/python scripts/run_internal_event_worker.py --execute --limit 50" in service

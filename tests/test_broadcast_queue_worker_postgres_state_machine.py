@@ -10,10 +10,13 @@ import pytest
 from psycopg.rows import dict_row
 
 import aicrm_next.background_jobs.broadcast_queue_worker as worker
+from aicrm_next.background_jobs import broadcast_effect_repository
 from aicrm_next.background_jobs.broadcast_queue_worker import (
     PostgresBroadcastQueueRepository,
     SafeSkippedBroadcastDispatcher,
 )
+from aicrm_next.cloud_orchestrator.repository import PostgresCloudPlanRepository
+from aicrm_next.platform_foundation.external_effects.repo import SQLAlchemyExternalEffectRepository
 
 
 def _seed_cloud_job(*, status: str = "queued", claim_token: str = "") -> dict[str, int | str]:
@@ -185,6 +188,68 @@ def test_broadcast_effect_insert_rolls_back_when_owner_link_finalization_fails(n
         "external_effect_job_id": None,
     }
     assert count["count"] == 0
+
+
+def test_terminal_delegated_effect_closes_broadcast_and_recipient_projections(next_pg_schema, monkeypatch) -> None:
+    seeded = _seed_cloud_job()
+    repo = PostgresBroadcastQueueRepository()
+    now = datetime.now(timezone.utc)
+    repo.claim_due_jobs(limit=1, now=now, claim_token="terminal-owner", lease_seconds=300)
+    dispatching = repo.begin_dispatch(int(seeded["job_id"]), claim_token="terminal-owner", now=now)
+    assert dispatching is not None
+    outcome = _delegated_outcome(monkeypatch, dispatching)
+    repo.finalize_dispatch(int(seeded["job_id"]), claim_token="terminal-owner", outcome=outcome)
+    effect = _row(
+        "SELECT id FROM external_effect_job WHERE business_type = 'broadcast_job' AND business_id = %s",
+        (str(seeded["job_id"]),),
+    )
+    with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as connection:
+        connection.execute(
+            """
+            UPDATE external_effect_job
+            SET status = 'blocked', last_error_code = 'broadcast_policy_blocked',
+                completed_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (effect["id"],),
+        )
+        connection.commit()
+    effect_job = SQLAlchemyExternalEffectRepository().get_job(int(effect["id"]))
+    assert effect_job is not None
+
+    result = broadcast_effect_repository._project(effect_job, None)
+
+    with psycopg.connect(os.environ["DATABASE_URL"]) as connection:
+        connection.execute(
+            "UPDATE cloud_broadcast_plans SET candidate_count = 1 WHERE plan_id = %s",
+            (seeded["plan_id"],),
+        )
+        connection.commit()
+
+    assert result["aggregate_status"] == "blocked"
+    job = _row(
+        "SELECT status, failed_count, reconciliation_required FROM broadcast_jobs WHERE id = %s",
+        (seeded["job_id"],),
+    )
+    recipient = _row(
+        "SELECT send_status, last_error FROM cloud_broadcast_plan_recipients WHERE id = %s",
+        (seeded["recipient_id"],),
+    )
+    message = _row(
+        "SELECT status, last_error FROM cloud_broadcast_plan_recipient_messages WHERE id = %s",
+        (seeded["message_id"],),
+    )
+    stats = PostgresCloudPlanRepository().plan_stats(str(seeded["plan_id"]))
+    failed_recipients, failed_total = PostgresCloudPlanRepository().list_recipients(
+        str(seeded["plan_id"]),
+        status="failed",
+    )
+    assert job == {"status": "blocked", "failed_count": 1, "reconciliation_required": False}
+    assert recipient == {"send_status": "failed", "last_error": "external_effect_blocked"}
+    assert message == {"status": "failed", "last_error": "external_effect_blocked"}
+    assert stats["failed_count"] == 1
+    assert failed_total == 1
+    assert [item["recipient_id"] for item in failed_recipients] == [seeded["recipient_id"]]
 
 
 def test_claim_begin_and_atomic_success_finalization_keep_all_projections_aligned(next_pg_schema) -> None:

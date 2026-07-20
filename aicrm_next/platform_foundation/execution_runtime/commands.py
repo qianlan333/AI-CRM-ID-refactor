@@ -9,6 +9,10 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from aicrm_next.platform_foundation.command_bus.models import CommandContext
+from aicrm_next.platform_foundation.external_effects.repo_contract import _public_job
+from aicrm_next.platform_foundation.external_effects.settlement_events import (
+    build_external_effect_settled_event,
+)
 from aicrm_next.platform_foundation.internal_events.models import (
     InternalEvent,
     InternalEventConsumerResult,
@@ -471,6 +475,22 @@ class QueueRuntimeCommandService:
                         "manual queue command CAS failed; target changed, is leased, held, or terminal"
                     )
                 target = self._target(normalized_kind, row)
+                if (
+                    normalized_kind == "external_effect"
+                    and normalized_action == "cancel"
+                    and target.status == "cancelled"
+                ):
+                    job_row = session.execute(
+                        text("SELECT * FROM external_effect_job WHERE id = :job_id"),
+                        {"job_id": int(item_id)},
+                    ).mappings().one()
+                    job = _public_job(dict(job_row))
+                    if job is None:
+                        raise RuntimeError("cancelled external effect settlement projection failed")
+                    enqueue_internal_event_outbox_in_session(
+                        session,
+                        build_external_effect_settled_event(job=job),
+                    )
                 notification = {"queue_kind": normalized_kind, "lane": target.lane}
                 session.execute(
                     text(
