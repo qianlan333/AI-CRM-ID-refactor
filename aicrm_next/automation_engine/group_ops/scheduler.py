@@ -288,8 +288,17 @@ class GroupOpsDueScheduler:
         base_payload["node_id"] = int(node.get("id") or 0)
         content_hash = _content_hash(base_payload)
         due_groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+        revision_groups: list[dict[str, str]] = []
         for group in groups:
             due_at = _due_at_for_group(plan=plan, node=node, group=group, business_tz=business_tz)
+            revision_groups.append(
+                {
+                    "chat_id": clean_text(group.get("chat_id")),
+                    "due_at": due_at.isoformat(timespec="minutes"),
+                    "binding_created_at": clean_text(group.get("created_at")),
+                    "binding_updated_at": clean_text(group.get("updated_at")),
+                }
+            )
             if due_at.astimezone(timezone.utc) > now.astimezone(timezone.utc):
                 summary.group_ops_skipped_future += 1
             else:
@@ -302,13 +311,25 @@ class GroupOpsDueScheduler:
             bucket = due_groups.setdefault(key, {"due_at": due_at, "chat_ids": []})
             bucket["chat_ids"].append(clean_text(group.get("chat_id")))
 
+        revision_fingerprint = _stable_hash(
+            {
+                "plan_id": int(plan.get("id") or 0),
+                "plan_updated_at": clean_text(plan.get("updated_at")),
+                "node_id": int(node.get("id") or 0),
+                "node_updated_at": clean_text(node.get("updated_at")),
+                "content_hash": content_hash,
+                "groups": sorted(revision_groups, key=lambda item: (item["due_at"], item["chat_id"])),
+            },
+            length=20,
+        )
+
         for bucket in due_groups.values():
             chat_ids = sorted(dict.fromkeys(bucket["chat_ids"]))
             due_at = bucket["due_at"]
             chat_hash = _stable_hash(chat_ids)
             source_id = f"{int(plan['id'])}:node:{int(node['id'])}:due:{_minute_key(due_at)}:groups:{chat_hash}"
             scheduled_at = due_at.isoformat(timespec="seconds")
-            idempotency_key = f"group_ops:{source_id}:{scheduled_at}"
+            idempotency_key = f"group_ops:{source_id}:{scheduled_at}:revision:{revision_fingerprint}"
             content_payload = dict(base_payload)
             content_payload["chat_ids"] = chat_ids
             planned = effect_graph_repo.plan(
@@ -326,7 +347,7 @@ class GroupOpsDueScheduler:
                     source_route="group_ops_due_scheduler",
                     source_command_id=source_id,
                     scheduled_at=scheduled_at,
-                    version_fingerprint=content_hash,
+                    version_fingerprint=revision_fingerprint,
                     materials=materials,
                 )
             )

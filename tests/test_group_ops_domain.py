@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from tests.group_ops_test_helpers import group_ops_repo
+from tests.group_ops_test_helpers import group_ops_repo  # noqa: F401, F811
 
 
-def test_group_ops_plan_actions_disable_enable_and_archive(group_ops_repo):
+def test_group_ops_plan_actions_disable_enable_and_archive(group_ops_repo):  # noqa: F811
     from aicrm_next.automation_engine.group_ops.application import (
         ArchiveGroupOpsPlanCommand,
         DisableGroupOpsPlanCommand,
@@ -25,6 +25,42 @@ def test_group_ops_plan_actions_disable_enable_and_archive(group_ops_repo):
     assert archived["archived"] is True
     assert archived["item"]["status"] == "disabled"
     assert group_ops_repo.get_plan(1) is None
+
+
+def test_disable_plan_invalidates_pre_materialized_effects_before_state_change(group_ops_repo):  # noqa: F811
+    from aicrm_next.automation_engine.group_ops.application import DisableGroupOpsPlanCommand
+
+    calls: list[dict] = []
+
+    class _EffectGraphs:
+        def cancel_plan(self, plan_id, *, actor, reason, node_id=None):
+            calls.append(
+                {
+                    "plan_id": plan_id,
+                    "actor": actor,
+                    "reason": reason,
+                    "node_id": node_id,
+                    "plan_status_during_cancel": group_ops_repo.get_plan(plan_id)["status"],
+                }
+            )
+            return {"ok": True, "matched_graph_count": 1, "cancelled_job_ids": [101]}
+
+    response = DisableGroupOpsPlanCommand(
+        repo=group_ops_repo,
+        effect_graph_repo=_EffectGraphs(),
+    )(1, operator="operator-1")
+
+    assert calls == [
+        {
+            "plan_id": 1,
+            "actor": "operator-1",
+            "reason": "group_ops_plan_disabled",
+            "node_id": None,
+            "plan_status_during_cancel": "active",
+        }
+    ]
+    assert response["item"]["status"] == "disabled"
+    assert response["effect_invalidation"]["cancelled_job_ids"] == [101]
 
 
 def test_domain_reuses_unified_attachment_validation():

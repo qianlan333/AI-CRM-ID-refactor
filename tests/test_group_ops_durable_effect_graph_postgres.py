@@ -257,3 +257,76 @@ def test_plan_edit_increments_version_and_preserves_crossed_provider_boundary():
     assert old["status"] == "dispatching"
     assert old["provider_call_started_at"] is not None
     assert old_graph["status"] == "superseded"
+
+
+def test_plan_edit_cancels_old_pre_provider_graph_and_emits_settlement():
+    repo = _repo()
+    first = repo.plan(_request("plan-revision-old", material_count=0, source_kind="plan_node", version="v1"))
+
+    second = repo.plan(_request("plan-revision-new", material_count=0, source_kind="plan_node", version="v2"))
+
+    assert second["source_version"] == 2
+    with _connect() as connection:
+        old = connection.execute(
+            "SELECT status, row_version FROM external_effect_job WHERE id = %s",
+            (first["final_effect_job_id"],),
+        ).fetchone()
+        old_graph = connection.execute(
+            "SELECT status FROM automation_group_ops_effect_graph WHERE execution_id = %s",
+            (first["execution_id"],),
+        ).fetchone()
+        event = connection.execute(
+            """
+            SELECT event_type, payload_json
+            FROM internal_event_outbox
+            WHERE idempotency_key = %s
+            """,
+            (
+                f"external_effect.settled:{first['final_effect_job_id']}:cancelled:"
+                f"row-version-{old['row_version']}",
+            ),
+        ).fetchone()
+    assert old["status"] == "cancelled"
+    assert old_graph["status"] == "superseded"
+    assert event["event_type"] == "external_effect.settled"
+    assert event["payload_json"]["attempt_id"] == ""
+
+
+def test_terminal_upload_closes_graph_and_settles_cancelled_final_effect():
+    repo = _repo()
+    planned = repo.plan(_request("terminal-upload-settlement", material_count=1))
+    upload_id = planned["upload_effect_job_ids"][0]
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE external_effect_job SET status = 'failed_terminal', completed_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (upload_id,),
+        )
+
+    result = repo.settle_effect(upload_id, status="failed_terminal")
+
+    assert result["settled"] is True
+    assert planned["final_effect_job_id"] in result["cancelled_job_ids"]
+    with _connect() as connection:
+        final = connection.execute(
+            "SELECT status, row_version FROM external_effect_job WHERE id = %s",
+            (planned["final_effect_job_id"],),
+        ).fetchone()
+        graph = connection.execute(
+            "SELECT status FROM automation_group_ops_effect_graph WHERE execution_id = %s",
+            (planned["execution_id"],),
+        ).fetchone()
+        event = connection.execute(
+            """
+            SELECT event_type, payload_json
+            FROM internal_event_outbox
+            WHERE idempotency_key = %s
+            """,
+            (
+                f"external_effect.settled:{planned['final_effect_job_id']}:cancelled:"
+                f"row-version-{final['row_version']}",
+            ),
+        ).fetchone()
+    assert final["status"] == "cancelled"
+    assert graph["status"] == "terminal"
+    assert event["event_type"] == "external_effect.settled"
+    assert event["payload_json"]["status"] == "cancelled"

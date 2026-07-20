@@ -3,16 +3,22 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aicrm_next.external_effect_composition import build_external_effect_continuation_consumers
 from aicrm_next.customer_read_model.refresh_intents import (
     CUSTOMER_REFRESH_COMPLETED_CONSUMER,
     CUSTOMER_REFRESH_COMPLETED_EVENT,
+)
+from aicrm_next.external_effect_composition import (
+    build_external_effect_continuation_consumers,
+    build_external_effect_settlement_consumers,
 )
 from aicrm_next.internal_event_composition import build_internal_event_consumer_registry
 from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.external_effects.completion_events import (
     EXTERNAL_EFFECT_COMPLETED_EVENT_TYPE,
     LEGACY_EXTERNAL_EFFECT_COMPLETION_CONSUMER,
+)
+from aicrm_next.platform_foundation.external_effects.settlement_events import (
+    EXTERNAL_EFFECT_SETTLED_EVENT_TYPE,
 )
 from aicrm_next.platform_foundation.internal_events import (
     DEFAULT_INTERNAL_EVENT_CONSUMER_REGISTRY,
@@ -60,6 +66,11 @@ def test_composition_builds_complete_isolated_registries() -> None:
     assert {item["consumer_name"] for item in customer_refresh_manifest["consumers"]} == {
         CUSTOMER_REFRESH_COMPLETED_CONSUMER
     }
+    settlement_consumers = {item.consumer_name for item in build_external_effect_settlement_consumers()}
+    assert _consumer_names(first, EXTERNAL_EFFECT_SETTLED_EVENT_TYPE) == settlement_consumers
+    settlement_manifest = first.fanout_manifest_for(EXTERNAL_EFFECT_SETTLED_EVENT_TYPE)
+    assert settlement_manifest["expected_consumer_count"] == len(settlement_consumers)
+    assert {item["consumer_name"] for item in settlement_manifest["consumers"]} == settlement_consumers
 
     with pytest.raises(RuntimeError, match="fanout contract is sealed"):
         first.register("registry.probe", "first_only", _unused_handler)

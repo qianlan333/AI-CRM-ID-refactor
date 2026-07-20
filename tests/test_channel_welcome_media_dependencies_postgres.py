@@ -322,6 +322,47 @@ def test_failed_or_cancelled_upload_never_releases_final_welcome():
     assert final_status == "cancelled"
 
 
+def test_terminal_upload_settlement_closes_welcome_graph_and_settles_final_job():
+    materials = _seed_materials()
+    repository = SQLAlchemyWelcomeEffectGraphRepository(get_session_factory())
+    planned = repository.plan(_request("channel_entry:welcome-terminal-settlement", materials))
+    upload_id = planned["upload_effect_job_ids"][0]
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE external_effect_job SET status = 'blocked', completed_at = CURRENT_TIMESTAMP WHERE id = %s",
+            (upload_id,),
+        )
+
+    result = repository.settle_effect(upload_id, status="blocked")
+
+    assert result["settled"] is True
+    assert planned["final_effect_job_id"] in result["cancelled_job_ids"]
+    with _connect() as connection:
+        final = connection.execute(
+            "SELECT status, row_version FROM external_effect_job WHERE id = %s",
+            (planned["final_effect_job_id"],),
+        ).fetchone()
+        graph = connection.execute(
+            "SELECT status FROM channel_welcome_effect_graph WHERE execution_id = %s",
+            (planned["execution_id"],),
+        ).fetchone()
+        event = connection.execute(
+            """
+            SELECT event_type, payload_json
+            FROM internal_event_outbox
+            WHERE idempotency_key = %s
+            """,
+            (
+                f"external_effect.settled:{planned['final_effect_job_id']}:cancelled:"
+                f"row-version-{final['row_version']}",
+            ),
+        ).fetchone()
+    assert final["status"] == "cancelled"
+    assert graph["status"] == "terminal"
+    assert event["event_type"] == "external_effect.settled"
+    assert event["payload_json"]["attempt_id"] == ""
+
+
 def test_invalid_material_rolls_back_graph_and_all_jobs():
     missing = {"image": 999991, "attachment": 999992, "miniprogram": 999993, "link": 999994}
     request = _request("channel_entry:welcome-postgres-rollback", missing)

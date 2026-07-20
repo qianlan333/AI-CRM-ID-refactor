@@ -2834,6 +2834,41 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "external_effect_broadcast_settlement_consumer",
+      "consumer_type": "projection",
+      "event_type": "external_effect.settled",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_external_push_settlement_consumer",
+      "consumer_type": "projection",
+      "event_type": "external_effect.settled",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_group_ops_settlement_consumer",
+      "consumer_type": "projection",
+      "event_type": "external_effect.settled",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_identity_settlement_consumer",
+      "consumer_type": "projection",
+      "event_type": "external_effect.settled",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
+      "consumer_name": "external_effect_welcome_settlement_consumer",
+      "consumer_type": "projection",
+      "event_type": "external_effect.settled",
+      "handler_registered": true,
+      "max_attempts": 5
+    },
+    {
       "consumer_name": "ai_audience_source_poke_consumer",
       "consumer_type": "projection",
       "event_type": "external_form.submitted",

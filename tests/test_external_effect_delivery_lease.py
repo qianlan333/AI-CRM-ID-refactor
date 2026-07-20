@@ -612,6 +612,24 @@ def test_postgres_concurrent_claim_has_one_winner_and_lease_cas() -> None:
         "idempotency_key": f"external_effect.completed:{updated.id}:{attempt.attempt_id}",
         "status": "pending",
     }
+    settlement = repo._one(
+        """
+        SELECT event_type, aggregate_id, idempotency_key, status
+        FROM internal_event_outbox
+        WHERE idempotency_key = :idempotency_key
+        """,
+        {
+            "idempotency_key": (
+                f"external_effect.settled:{updated.id}:succeeded:{attempt.attempt_id}"
+            )
+        },
+    )
+    assert settlement == {
+        "event_type": "external_effect.settled",
+        "aggregate_id": str(updated.id),
+        "idempotency_key": f"external_effect.settled:{updated.id}:succeeded:{attempt.attempt_id}",
+        "status": "pending",
+    }
 
 
 @pytest.mark.skipif(not _database_url(), reason="PostgreSQL integration database is not configured")
@@ -644,3 +662,20 @@ def test_postgres_cancel_request_uses_row_version_and_preserves_live_lease_until
     assert settled.status == "cancelled"
     assert settled.lease_token == ""
     assert settled.row_version == requested.row_version + 1
+    outbox = repo._one(
+        """
+        SELECT event_type, aggregate_id, idempotency_key, status, payload_json
+        FROM internal_event_outbox
+        WHERE idempotency_key = :idempotency_key
+        """,
+        {
+            "idempotency_key": (
+                f"external_effect.settled:{settled.id}:cancelled:row-version-{settled.row_version}"
+            )
+        },
+    )
+    assert outbox is not None
+    assert outbox["event_type"] == "external_effect.settled"
+    assert outbox["aggregate_id"] == str(settled.id)
+    assert outbox["status"] == "pending"
+    assert outbox["payload_json"]["attempt_id"] == ""

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from aicrm_next.automation_engine.group_ops.durable_effects_repository import (
@@ -157,3 +158,45 @@ def test_same_plan_version_and_idempotency_reuse_without_duplicate_effects():
     assert duplicate["execution_id"] == first["execution_id"]
     assert duplicate["job_ids"] == first["job_ids"]
     assert len(effects.list_jobs({}, limit=20)[0]) == 1
+
+
+def test_terminal_upload_closes_graph_and_cancels_unreleased_final_effect():
+    effects, graphs = _repositories()
+    planned = graphs.plan(_request("graph-terminal-upload", materials=1))
+    upload_id = planned["upload_effect_job_ids"][0]
+
+    settled = graphs.settle_effect(
+        upload_id,
+        status="failed_terminal",
+        attempt_id="eea_terminal_upload",
+    )
+    duplicate = graphs.settle_effect(
+        upload_id,
+        status="failed_terminal",
+        attempt_id="eea_terminal_upload",
+    )
+
+    assert settled["settled"] is True
+    assert settled["effect_status"] == "failed_terminal"
+    assert effects.get_job(planned["final_effect_job_id"]).status == "cancelled"
+    assert duplicate["settled"] is False
+    assert duplicate["reason"] == "graph_terminal"
+
+
+def test_plan_scope_cancel_invalidates_all_pre_provider_node_graphs():
+    effects, graphs = _repositories()
+    first = graphs.plan(_request("plan-scope-node-1", source_kind="plan_node", version="revision-1"))
+    second_request = _request("plan-scope-node-2", source_kind="plan_node", version="revision-1")
+    second_request = replace(second_request, node_id=9)
+    second = graphs.plan(second_request)
+
+    cancelled = graphs.cancel_plan(
+        7,
+        actor="operator-1",
+        reason="plan owner changed",
+    )
+
+    assert cancelled["matched_graph_count"] == 2
+    assert set(cancelled["cancelled_execution_ids"]) == {first["execution_id"], second["execution_id"]}
+    assert effects.get_job(first["final_effect_job_id"]).status == "cancelled"
+    assert effects.get_job(second["final_effect_job_id"]).status == "cancelled"

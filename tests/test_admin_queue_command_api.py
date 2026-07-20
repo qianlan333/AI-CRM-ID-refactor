@@ -504,6 +504,26 @@ def test_external_cancel_routes_are_strict_cas_commands(
     assert accepted.json()["status"] == "cancelled"
     assert stale.status_code == 409
     assert stale.json()["error"] == "queue_command_cas_conflict"
+    with _connect() as connection:
+        persisted = connection.execute(
+            "SELECT status, row_version FROM external_effect_job WHERE id = %s",
+            (int(job["id"]),),
+        ).fetchone()
+        settlement = connection.execute(
+            """
+            SELECT event_type, payload_json, status
+            FROM internal_event_outbox
+            WHERE idempotency_key = %s
+            """,
+            (
+                f"external_effect.settled:{job['id']}:cancelled:"
+                f"row-version-{persisted['row_version']}",
+            ),
+        ).fetchone()
+    assert persisted["status"] == "cancelled"
+    assert settlement["event_type"] == "external_effect.settled"
+    assert settlement["payload_json"]["attempt_id"] == ""
+    assert settlement["status"] == "pending"
 
 
 def test_unknown_external_retry_requires_duplicate_risk_confirmed(next_client) -> None:

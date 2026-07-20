@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import os
-import time
 from typing import Any
 
 from aicrm_next.integration_gateway.wecom_group_contract import WeComGroupAssetAdapterContract
 from aicrm_next.shared.admin_read_fallback import admin_read_unavailable_payload
-from aicrm_next.shared.errors import ApplicationError, ContractError, NotFoundError
+from aicrm_next.shared.errors import ContractError, NotFoundError
 from aicrm_next.shared.repository_provider import RepositoryProviderError, blocked_production_payload
-from aicrm_next.shared.runtime import production_data_ready
 
 from . import CAPABILITY_OWNER
 from .domain import (
@@ -21,7 +19,6 @@ from .domain import (
     mask_sensitive_payload,
     normalize_action_payload,
     normalize_group_snapshots,
-    normalize_node_payload,
     normalize_plan_type,
     normalize_recipients,
 )
@@ -54,25 +51,10 @@ from .durable_effects_repository import (
     build_group_ops_effect_graph_repository,
 )
 from .legacy_bundle import receive_trusted_group_bundle
+from . import plan_effect_lifecycle
 from .projections import group_asset_item, plan_list_item, plan_public_payload
 from .repo import GroupOpsRepository, build_group_ops_repository, plan_binding_summary
-
-
-class ConflictError(ApplicationError):
-    status_code = 409
-
-
-_WEBHOOK_RATE_BUCKET: dict[str, list[float]] = {}
-
-
-def _assert_webhook_rate_limit(webhook_key: str, *, limit: int = 60, window_seconds: int = 60) -> None:
-    now = time.time()
-    bucket_key = clean_text(webhook_key)
-    items = [ts for ts in _WEBHOOK_RATE_BUCKET.get(bucket_key, []) if now - ts <= window_seconds]
-    if len(items) >= limit:
-        raise ConflictError("webhook rate limit exceeded")
-    items.append(now)
-    _WEBHOOK_RATE_BUCKET[bucket_key] = items
+from .runtime_guards import ConflictError, assert_webhook_rate_limit
 
 
 def group_ops_side_effect_safety(**overrides: bool) -> dict[str, bool]:
@@ -260,60 +242,99 @@ class GetGroupOpsPlanQuery:
 
 
 class UpdateGroupOpsPlanCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+    ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def __call__(self, plan_id: int, request: GroupOpsPlanUpdateRequest) -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        _plan_or_404(repo, plan_id)
-        plan = repo.update_plan(int(plan_id), request.model_dump(exclude_none=True))
-        return _response({"item": plan, **plan_public_payload(repo, plan)}, repo=repo)
+        return _response(
+            plan_effect_lifecycle.update_plan(
+                repo,
+                self._effect_graph_repo,
+                plan_id,
+                request,
+            ),
+            repo=repo,
+        )
 
 
 class EnableGroupOpsPlanCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+    ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def __call__(self, plan_id: int, *, operator: str = "system") -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        _plan_or_404(repo, plan_id)
-        from aicrm_next.send_content.application import assert_group_invite_bindings_ready
-
-        for node in repo.list_nodes(int(plan_id)):
-            if clean_text(node.get("status") or "active") != "active":
-                continue
-            assert_group_invite_bindings_ready(node.get("content_package_json") or {}, channel="group_ops")
-        plan = repo.update_plan(int(plan_id), {"status": "active", "operator": operator})
-        return _response({"item": plan, **plan_public_payload(repo, plan)}, repo=repo)
+        return _response(
+            plan_effect_lifecycle.enable_plan(
+                repo,
+                self._effect_graph_repo,
+                plan_id,
+                operator=operator,
+            ),
+            repo=repo,
+        )
 
 
 class DisableGroupOpsPlanCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+    ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def __call__(self, plan_id: int, *, operator: str = "system") -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        _plan_or_404(repo, plan_id)
-        plan = repo.update_plan(int(plan_id), {"status": "disabled", "operator": operator})
-        return _response({"item": plan, **plan_public_payload(repo, plan)}, repo=repo)
+        return _response(
+            plan_effect_lifecycle.disable_plan(
+                repo,
+                self._effect_graph_repo,
+                plan_id,
+                operator=operator,
+            ),
+            repo=repo,
+        )
 
 
 class ArchiveGroupOpsPlanCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+    ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def __call__(self, plan_id: int, *, operator: str = "system") -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        plan = repo.archive_plan(int(plan_id), operator=operator)
-        return _response({"archived": True, "item": plan, **plan_public_payload(repo, plan)}, repo=repo)
+        return _response(
+            plan_effect_lifecycle.archive_plan(
+                repo,
+                self._effect_graph_repo,
+                plan_id,
+                operator=operator,
+            ),
+            repo=repo,
+        )
 
 
 class ListGroupOpsPlanGroupsQuery:
@@ -330,35 +351,52 @@ class ListGroupOpsPlanGroupsQuery:
 
 
 class AddGroupOpsPlanGroupCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+    ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def __call__(self, plan_id: int, request: GroupOpsBindGroupRequest) -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        _plan_or_404(repo, plan_id)
-        group = repo.get_group_asset(request.chat_id)
-        if not group:
-            raise NotFoundError("group chat snapshot not found")
-        item = repo.bind_group(int(plan_id), group)
-        groups = repo.list_bound_groups(int(plan_id))
-        return _response({"item": item, "summary": binding_stats(groups)}, status_code=201, repo=repo)
+        return _response(
+            plan_effect_lifecycle.add_group(
+                repo,
+                self._effect_graph_repo,
+                plan_id,
+                request,
+            ),
+            status_code=201,
+            repo=repo,
+        )
 
 
 class RemoveGroupOpsPlanGroupCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+    ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def __call__(self, plan_id: int, chat_id: str) -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        _plan_or_404(repo, plan_id)
-        removed = repo.remove_group(int(plan_id), chat_id)
-        if not removed:
-            raise NotFoundError("group binding not found")
-        return _response({"removed": True, "summary": binding_stats(repo.list_bound_groups(int(plan_id)))}, repo=repo)
+        return _response(
+            plan_effect_lifecycle.remove_group(
+                repo,
+                self._effect_graph_repo,
+                plan_id,
+                chat_id,
+            ),
+            repo=repo,
+        )
 
 
 class ListGroupOpsNodesQuery:
@@ -375,66 +413,77 @@ class ListGroupOpsNodesQuery:
 
 
 class CreateGroupOpsNodeCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+    ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def __call__(self, plan_id: int, request: GroupOpsNodeRequest) -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        plan = _plan_or_404(repo, plan_id)
-        item = repo.create_node(int(plan_id), normalize_node_payload(request.model_dump()))
-        materialization: dict[str, Any] = {}
-        if production_data_ready() and clean_text(plan.get("status")) == "active":
-            from .scheduler import materialize_group_ops_plan_node
-
-            materialization = materialize_group_ops_plan_node(
-                repo=repo,
-                plan=plan,
-                node=item,
-                operator=clean_text(plan.get("owner_userid")) or "group_ops_plan_editor",
-            )
-        return _response({"item": item, "effect_materialization": materialization}, status_code=201, repo=repo)
+        return _response(
+            plan_effect_lifecycle.create_node(
+                repo,
+                self._effect_graph_repo,
+                plan_id,
+                request,
+            ),
+            status_code=201,
+            repo=repo,
+        )
 
 
 class UpdateGroupOpsNodeCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+    ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def __call__(self, plan_id: int, node_id: int, request: GroupOpsNodeRequest) -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        plan = _plan_or_404(repo, plan_id)
-        existing = next((item for item in repo.list_nodes(int(plan_id)) if int(item["id"]) == int(node_id)), None)
-        if not existing:
-            raise NotFoundError("group ops node not found")
-        item = repo.update_node(int(plan_id), int(node_id), normalize_node_payload(request.model_dump(), existing=existing))
-        materialization: dict[str, Any] = {}
-        if production_data_ready() and clean_text(plan.get("status")) == "active":
-            from .scheduler import materialize_group_ops_plan_node
-
-            materialization = materialize_group_ops_plan_node(
-                repo=repo,
-                plan=plan,
-                node=item,
-                operator=clean_text(plan.get("owner_userid")) or "group_ops_plan_editor",
-            )
-        return _response({"item": item, "effect_materialization": materialization}, repo=repo)
+        return _response(
+            plan_effect_lifecycle.update_node(
+                repo,
+                self._effect_graph_repo,
+                plan_id,
+                node_id,
+                request,
+            ),
+            repo=repo,
+        )
 
 
 class DeleteGroupOpsNodeCommand:
-    def __init__(self, repo: GroupOpsRepository | None = None) -> None:
+    def __init__(
+        self,
+        repo: GroupOpsRepository | None = None,
+        effect_graph_repo: GroupOpsEffectGraphRepository | None = None,
+    ) -> None:
         self._repo = repo
+        self._effect_graph_repo = effect_graph_repo
 
     def __call__(self, plan_id: int, node_id: int) -> dict[str, Any]:
         repo = _repo_or_block(self._repo)
         if repo is None:
             return _production_unavailable()
-        _plan_or_404(repo, plan_id)
-        if not repo.delete_node(int(plan_id), int(node_id)):
-            raise NotFoundError("group ops node not found")
-        return _response({"deleted": True}, repo=repo)
+        return _response(
+            plan_effect_lifecycle.delete_node(
+                repo,
+                self._effect_graph_repo,
+                plan_id,
+                node_id,
+            ),
+            repo=repo,
+        )
 
 
 class ListGroupOpsGroupsQuery:
@@ -1164,7 +1213,7 @@ class ReceiveGroupOpsWebhookCommand:
             raise NotFoundError("group ops webhook not found")
         if plan.get("status") != "active":
             raise ConflictError("group ops webhook plan is not active")
-        _assert_webhook_rate_limit(webhook_key)
+        assert_webhook_rate_limit(webhook_key)
         if self._is_legacy_group_bundle_request(request):
             return self._receive_legacy_group_bundle(repo, plan, request, idempotency_key=idempotency_key)
         idem = clean_text(idempotency_key or request.idempotency_key)
@@ -1431,7 +1480,7 @@ class ReceiveTrustedGroupOpsBroadcastCommand:
             raise ContractError("broadcast plan must be a webhook plan")
         if plan.get("status") != "active":
             raise ConflictError("group ops webhook plan is not active")
-        _assert_webhook_rate_limit(clean_text(plan.get("webhook_key")) or f"plan:{int(plan_id)}")
+        assert_webhook_rate_limit(clean_text(plan.get("webhook_key")) or f"plan:{int(plan_id)}")
         return ReceiveGroupOpsWebhookCommand(repo)._receive_legacy_group_bundle(
             repo,
             plan,

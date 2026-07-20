@@ -18,6 +18,9 @@ from aicrm_next.platform_foundation.external_effects import WECOM_MEDIA_UPLOAD, 
 from aicrm_next.platform_foundation.external_effects.repo import build_external_effect_repository
 from aicrm_next.platform_foundation.external_effects.service import ExternalEffectService
 from aicrm_next.platform_foundation.external_effects.continuations import ExternalEffectContinuation
+from aicrm_next.platform_foundation.external_effects.settlement_events import (
+    enqueue_external_effect_settled_rows_in_session,
+)
 from aicrm_next.shared.db_session import get_session_factory
 from aicrm_next.shared.runtime import fixture_mode
 
@@ -68,6 +71,8 @@ class WelcomeEffectGraphRepository(Protocol):
     def plan(self, request: WelcomeEffectGraphRequest) -> dict[str, Any]: ...
 
     def release_after_upload(self, upload_job_id: int, *, attempt_id: str = "") -> dict[str, Any]: ...
+
+    def settle_effect(self, effect_job_id: int, *, status: str, attempt_id: str = "") -> dict[str, Any]: ...
 
     def cancel(self, execution_id: str, *, actor: str, reason: str) -> dict[str, Any]: ...
 
@@ -648,6 +653,148 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                 "final_effect_job_id": int(final["id"]),
             }
 
+    def settle_effect(self, effect_job_id: int, *, status: str, attempt_id: str = "") -> dict[str, Any]:
+        terminal_status = _clean(status)
+        if terminal_status not in {
+            "succeeded",
+            "simulated",
+            "unknown_after_dispatch",
+            "failed_terminal",
+            "blocked",
+            "cancelled",
+        }:
+            return {"ok": False, "applicable": False, "reason": "effect_not_terminal"}
+        with self._session_factory() as session:
+            graph_row = (
+                session.execute(
+                    sql_text(
+                        """
+                        SELECT graph.*, dependency.id AS dependency_id
+                        FROM channel_welcome_effect_graph graph
+                        LEFT JOIN channel_welcome_effect_dependency dependency
+                          ON dependency.graph_id = graph.id
+                         AND dependency.prerequisite_effect_job_id = :effect_job_id
+                        WHERE graph.final_effect_job_id = :effect_job_id
+                           OR dependency.prerequisite_effect_job_id = :effect_job_id
+                        ORDER BY graph.id DESC LIMIT 1
+                        FOR UPDATE OF graph
+                        """
+                    ),
+                    {"effect_job_id": int(effect_job_id)},
+                )
+                .mappings()
+                .first()
+            )
+            if not graph_row:
+                session.rollback()
+                return {"ok": True, "applicable": False, "reason": "welcome_graph_not_found"}
+            graph = dict(graph_row)
+            if _clean(graph["status"]) in {"cancelled", "terminal"}:
+                session.rollback()
+                return {
+                    "ok": True,
+                    "applicable": True,
+                    "settled": False,
+                    "reason": f"graph_{graph['status']}",
+                    "execution_id": graph["execution_id"],
+                }
+
+            is_final = int(graph.get("final_effect_job_id") or 0) == int(effect_job_id)
+            cancelled_job_ids: list[int] = []
+            if not is_final:
+                session.execute(
+                    sql_text(
+                        """
+                        UPDATE channel_welcome_effect_dependency
+                        SET status = :status, completed_attempt_id = :attempt_id,
+                            completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :dependency_id AND status IN ('waiting', 'failed', 'cancelled')
+                        """
+                    ),
+                    {
+                        "status": "cancelled" if terminal_status == "cancelled" else "failed",
+                        "attempt_id": _clean(attempt_id),
+                        "dependency_id": int(graph["dependency_id"]),
+                    },
+                )
+                cancelled_rows = session.execute(
+                        sql_text(
+                            """
+                            UPDATE external_effect_job job
+                            SET status = 'cancelled',
+                                cancel_requested_at = COALESCE(cancel_requested_at, CURRENT_TIMESTAMP),
+                                cancel_requested_by = CASE
+                                    WHEN cancel_requested_by = '' THEN 'welcome_dependency_settlement'
+                                    ELSE cancel_requested_by
+                                END,
+                                cancel_reason = CASE
+                                    WHEN cancel_reason = '' THEN 'welcome_dependency_terminal'
+                                    ELSE cancel_reason
+                                END,
+                                cancelled_at = COALESCE(cancelled_at, CURRENT_TIMESTAMP),
+                                completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP),
+                                row_version = row_version + 1,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE job.id IN (
+                                SELECT dependent_effect_job_id
+                                FROM channel_welcome_effect_dependency
+                                WHERE graph_id = :graph_id
+                                UNION
+                                SELECT prerequisite_effect_job_id
+                                FROM channel_welcome_effect_dependency
+                                WHERE graph_id = :graph_id
+                                  AND prerequisite_effect_job_id <> :effect_job_id
+                                UNION SELECT :final_job_id
+                            )
+                              AND job.status IN ('planned', 'approved', 'queued', 'failed_retryable')
+                              AND job.provider_call_started_at IS NULL
+                              AND NOT EXISTS (
+                                  SELECT 1 FROM external_effect_attempt attempt
+                                  WHERE attempt.job_id = job.id
+                                    AND attempt.provider_call_started_at IS NOT NULL
+                              )
+                            RETURNING job.*
+                            """
+                        ),
+                        {
+                            "graph_id": int(graph["id"]),
+                            "effect_job_id": int(effect_job_id),
+                            "final_job_id": int(graph.get("final_effect_job_id") or 0),
+                        },
+                    ).mappings().all()
+                cancelled_job_ids = enqueue_external_effect_settled_rows_in_session(session, cancelled_rows)
+            final_boundary = session.execute(
+                sql_text(
+                    """
+                    SELECT provider_call_started_at IS NOT NULL OR EXISTS (
+                        SELECT 1 FROM external_effect_attempt attempt
+                        WHERE attempt.job_id = external_effect_job.id
+                          AND attempt.provider_call_started_at IS NOT NULL
+                    ) AS provider_boundary_crossed
+                    FROM external_effect_job WHERE id = :job_id
+                    """
+                ),
+                {"job_id": int(graph.get("final_effect_job_id") or 0)},
+            ).scalar_one_or_none()
+            session.execute(
+                sql_text(
+                    "UPDATE channel_welcome_effect_graph SET status = 'terminal', updated_at = CURRENT_TIMESTAMP WHERE id = :graph_id"
+                ),
+                {"graph_id": int(graph["id"])},
+            )
+            session.commit()
+            return {
+                "ok": True,
+                "applicable": True,
+                "settled": True,
+                "execution_id": graph["execution_id"],
+                "effect_job_id": int(effect_job_id),
+                "effect_status": terminal_status,
+                "cancelled_job_ids": cancelled_job_ids,
+                "provider_boundary_crossed": bool(final_boundary),
+            }
+
     @staticmethod
     def _provider_media_id(session: Session, dependency: dict[str, Any]) -> str:
         queries = {
@@ -698,7 +845,7 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                 session.rollback()
                 return {"ok": False, "cancelled": False, "reason": "graph_not_found"}
             graph = dict(graph_row)
-            cancelled = session.execute(
+            cancelled_rows = session.execute(
                 sql_text(
                     """
                     UPDATE external_effect_job job
@@ -712,13 +859,13 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                         SELECT dependent_effect_job_id FROM channel_welcome_effect_dependency WHERE graph_id = :graph_id
                         UNION SELECT :final_job_id
                     )
-                      AND job.status IN ('planned', 'approved', 'queued', 'failed_retryable', 'blocked')
+                      AND job.status IN ('planned', 'approved', 'queued', 'failed_retryable')
                       AND job.provider_call_started_at IS NULL
                       AND NOT EXISTS (
                           SELECT 1 FROM external_effect_attempt attempt
                           WHERE attempt.job_id = job.id AND attempt.provider_call_started_at IS NOT NULL
                       )
-                    RETURNING job.id
+                    RETURNING job.*
                     """
                 ),
                 {
@@ -727,7 +874,8 @@ class SQLAlchemyWelcomeEffectGraphRepository:
                     "graph_id": int(graph["id"]),
                     "final_job_id": int(graph.get("final_effect_job_id") or 0),
                 },
-            ).scalars().all()
+            ).mappings().all()
+            cancelled = enqueue_external_effect_settled_rows_in_session(session, cancelled_rows)
             session.execute(
                 sql_text(
                     """
@@ -837,6 +985,35 @@ class InMemoryWelcomeEffectGraphRepository:
         del upload_job_id, attempt_id
         return {"ok": False, "applicable": False, "released": False, "reason": "fixture_release_not_supported"}
 
+    def settle_effect(self, effect_job_id: int, *, status: str, attempt_id: str = "") -> dict[str, Any]:
+        del attempt_id
+        for result in self._graphs.values():
+            if int(effect_job_id) not in {
+                int(result["final_effect_job_id"]),
+                *[int(item) for item in result["upload_effect_job_ids"]],
+            }:
+                continue
+            if result["status"] in {"cancelled", "terminal"}:
+                return {
+                    "ok": True,
+                    "applicable": True,
+                    "settled": False,
+                    "reason": f"graph_{result['status']}",
+                    "execution_id": result["execution_id"],
+                }
+            result["status"] = "terminal"
+            return {
+                "ok": True,
+                "applicable": True,
+                "settled": True,
+                "execution_id": result["execution_id"],
+                "effect_job_id": int(effect_job_id),
+                "effect_status": _clean(status),
+                "cancelled_job_ids": [],
+                "provider_boundary_crossed": False,
+            }
+        return {"ok": True, "applicable": False, "reason": "welcome_graph_not_found"}
+
     def cancel(self, execution_id: str, *, actor: str, reason: str) -> dict[str, Any]:
         del actor, reason
         for result in self._graphs.values():
@@ -867,16 +1044,39 @@ def _release_welcome_after_upload(job, _dispatch_result) -> dict[str, Any]:
     )
 
 
+def _matches_welcome_terminal_effect(job, _dispatch_result) -> bool:
+    return (
+        job.business_type == WELCOME_EFFECT_BUSINESS_TYPE
+        and bool(_clean(job.business_id))
+        and job.status != "succeeded"
+    )
+
+
+def _settle_welcome_effect_graph(job, _dispatch_result) -> dict[str, Any]:
+    return build_welcome_effect_graph_repository().settle_effect(
+        int(job.id),
+        status=_clean(job.status),
+        attempt_id=_clean(job.last_attempt_id),
+    )
+
+
 WELCOME_MEDIA_DEPENDENCY_CONTINUATION = ExternalEffectContinuation(
     name=WELCOME_MEDIA_COMPLETION_CONSUMER,
     matches=_matches_welcome_media_upload,
     run=_release_welcome_after_upload,
 )
 
+WELCOME_EFFECT_SETTLEMENT_CONTINUATION = ExternalEffectContinuation(
+    name="welcome_effect_graph_settlement",
+    matches=_matches_welcome_terminal_effect,
+    run=_settle_welcome_effect_graph,
+)
+
 
 __all__ = [
     "SQLAlchemyWelcomeEffectGraphRepository",
     "WELCOME_EFFECT_BUSINESS_TYPE",
+    "WELCOME_EFFECT_SETTLEMENT_CONTINUATION",
     "WELCOME_MEDIA_DEPENDENCY_CONTINUATION",
     "WelcomeEffectGraphRequest",
     "WelcomeEffectGraphRepository",

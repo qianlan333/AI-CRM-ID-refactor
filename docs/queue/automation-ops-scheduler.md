@@ -34,14 +34,27 @@ The External Effect job keeps the current group_ops delivery contract in `payloa
 
 ## Idempotency
 
-The scheduler uses a stable source/idempotency shape that includes:
+The scheduler uses a revision-aware source/idempotency shape that includes:
 
 - `plan_id`
 - `node_id`
 - `due_at` minute
+- plan and node `updated_at`
+- normalized message content hash
+- owner and schedule fields
+- sorted active chat bindings and their lifecycle timestamps
 - sorted `chat_ids` hash
 
-The `external_effect_job` idempotency guard is the primary protection, with a historical `broadcast_jobs` lookup only for older rows. Rerunning the timer does not duplicate External Effect jobs.
+The revision fingerprint is also the effect graph `version_fingerprint`. Rerunning the
+same revision does not duplicate work. Editing plan/node content, owner, schedule, or
+active group membership creates a new graph and transactionally cancels every old
+pre-provider child before the new revision becomes eligible. Disable, archive, delete,
+and group removal invalidate the old graph without materializing a replacement. A child
+that has crossed the provider boundary is never overwritten or replayed; its graph is
+reported as terminal/superseded with the boundary evidence preserved.
+
+The `external_effect_job` idempotency guard is the primary duplicate protection, with a
+historical `broadcast_jobs` lookup only for older rows.
 
 ## Retired legacy components
 

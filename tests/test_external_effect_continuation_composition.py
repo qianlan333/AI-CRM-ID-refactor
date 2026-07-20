@@ -12,6 +12,7 @@ from aicrm_next.external_effect_composition import (
     build_external_effect_adapter_registry,
     build_external_effect_continuation_consumers,
     build_external_effect_continuation_registry,
+    build_external_effect_settlement_consumers,
 )
 from aicrm_next.main import create_app
 
@@ -58,6 +59,20 @@ def test_external_effect_continuations_have_independent_durable_consumer_names()
             "identity_external_contact_detail_continuation",
         )
     }
+
+
+def test_terminal_settlement_continuations_are_separate_and_provider_result_free() -> None:
+    consumers = build_external_effect_settlement_consumers()
+
+    assert tuple(item.continuation.name for item in consumers) == (
+        "identity_external_effect_settlement",
+        "group_ops_effect_graph_settlement",
+        "welcome_effect_graph_settlement",
+        "broadcast_external_effect_settlement",
+        "external_push_delivery_settlement",
+    )
+    assert len({item.consumer_name for item in consumers}) == 5
+    assert all(item.continuation.requires_provider_result is False for item in consumers)
 
 
 def test_web_app_owns_its_external_effect_continuation_registry() -> None:

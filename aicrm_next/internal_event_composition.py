@@ -13,6 +13,7 @@ from .external_effect_composition import (
     EXTERNAL_EFFECT_PROVIDER_RESULT_ACCESS_ALLOWLIST,
     build_external_effect_continuation_consumers,
     build_external_effect_continuation_registry,
+    build_external_effect_settlement_consumers,
 )
 from .ai_audience_ops import register_ai_audience_event_consumers
 from .customer_read_model.events import register_customer_read_model_event_consumers
@@ -30,6 +31,9 @@ from .platform_foundation.internal_events.shadow import broadcast_task_planner_c
 from .platform_foundation.internal_events.payment import webhook_order_paid_consumer
 from .platform_foundation.external_effects.completion_events import (
     register_external_effect_completed_consumers,
+)
+from .platform_foundation.external_effects.settlement_events import (
+    register_external_effect_settled_consumers,
 )
 from .platform_foundation.external_effects.repo import build_external_effect_repository
 from .platform_foundation.execution_runtime.commands import (
@@ -144,6 +148,15 @@ def register_external_effect_completion_consumers(registry: InternalEventConsume
     )
 
 
+def register_external_effect_settlement_consumers(registry: InternalEventConsumerRegistry | None = None) -> None:
+    registry = registry or current_internal_event_consumer_registry()
+    register_external_effect_settled_consumers(
+        registry,
+        consumers=build_external_effect_settlement_consumers(),
+        repository_factory=build_external_effect_repository,
+    )
+
+
 def build_internal_event_consumer_registry() -> InternalEventConsumerRegistry:
     registry = InternalEventConsumerRegistry()
     register_payment_succeeded_consumers(registry)
@@ -153,6 +166,7 @@ def build_internal_event_consumer_registry() -> InternalEventConsumerRegistry:
     register_ai_audience_event_consumers(registry)
     register_customer_read_model_event_consumers(registry)
     register_external_effect_completion_consumers(registry)
+    register_external_effect_settlement_consumers(registry)
     register_queue_runtime_command_consumer(registry)
     registry.seal_fanout_contract()
     return registry
@@ -165,4 +179,5 @@ __all__ = [
     "register_refund_succeeded_consumers",
     "register_shadow_event_consumers",
     "register_external_effect_completion_consumers",
+    "register_external_effect_settlement_consumers",
 ]

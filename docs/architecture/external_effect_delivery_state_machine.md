@@ -35,11 +35,18 @@ An adapter may not turn `side_effect_executed = false` into `succeeded`. Fake su
 is `simulated`; a claimed success without real execution is `blocked`. A real call
 without provider evidence is `unknown_after_dispatch`.
 
-The existing attempt row, final job transition, and `external_effect.completed`
-internal-event outbox envelope are committed in one transaction. A successful
-provider call followed by an unpersisted result or outbox hand-off is quarantined
-as unknown, not retried as if no call occurred. Post-success projections execute
-from the durable internal event and cannot rewrite provider truth.
+The existing attempt row, final job transition, and terminal internal-event outbox
+envelopes are committed in one transaction. Every new runtime transition into
+`succeeded`, `simulated`, `unknown_after_dispatch`, `failed_terminal`, `blocked`, or
+`cancelled` emits `external_effect.settled`. A successful transition also emits the
+existing `external_effect.completed`; that event remains success-only and preserves
+all provider-result access controls. A cancellation that did not create a new provider
+attempt emits an attemptless settlement, even when the job retains an older retryable
+attempt for audit.
+
+A successful provider call followed by an unpersisted result or outbox hand-off is
+quarantined as unknown, not retried as if no call occurred. Post-success and terminal
+projections execute from durable internal events and cannot rewrite provider truth.
 
 `external_effect.completed` has an authoritative per-continuation fan-out. Identity,
 Group Ops, Broadcast, Questionnaire, External Push, Automation, and any separately
@@ -51,11 +58,21 @@ historical runs and is excluded from every new fan-out manifest. Restricted prov
 payload is loaded only after an explicitly allowlisted continuation predicate matches;
 job, terminal attempt, and tenant linkage must all match before that read.
 
+`external_effect.settled` has a separate, payload-minimal fan-out. Identity, Group Ops,
+Welcome, Broadcast, and External Push each own an independent projection run. These
+consumers reload the canonical job/attempt, cannot request restricted provider result,
+and close their parent queue, graph, recipient, message, or delivery state for every
+non-success terminal outcome. A success is a no-op in this fan-out because its business
+continuations remain owned by `external_effect.completed`.
+
 ## Cancellation
 
 - Every mutable job exposes a monotonic `row_version`; a supplied
   `expected_version` must match before a cancellation request is accepted.
 - A queued/planned/retryable job is cancelled with a status CAS.
+- Graph and plan cancellation paths use `UPDATE ... RETURNING` and enqueue one
+  attemptless settlement per cancelled child in the same transaction; direct table
+  updates without this hand-off are not an allowed runtime path.
 - A leased job records `cancel_requested_at/by/reason` without clearing the lease.
 - The worker may settle the request only before the durable provider attempt exists.
   Once that boundary exists, the provider result wins and the request remains audit
@@ -66,6 +83,10 @@ job, terminal attempt, and tenant linkage must all match before that read.
 `unknown_after_dispatch` requires provider-side reconciliation. Manual retry requires
 an actor, a reason, and an explicit `confirm_duplicate_risk = true` acknowledgement.
 The authorization is appended to `external_effect_attempt` before the job is queued.
+
+History-freeze quarantine remains deliberately held and non-replayed. It is not a new
+runtime dispatch transition and must not manufacture settlement work for the frozen
+pre-cutover population.
 
 ## Broadcast fake adapters
 

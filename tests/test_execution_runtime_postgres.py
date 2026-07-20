@@ -1009,6 +1009,17 @@ def test_expired_post_provider_lease_becomes_unknown_and_attempt_is_closed() -> 
             "SELECT status, error_code FROM external_effect_attempt WHERE attempt_id = %s",
             (attempt.attempt_id,),
         ).fetchone()
+        settlement = connection.execute(
+            """
+            SELECT event_type, payload_json, status
+            FROM internal_event_outbox
+            WHERE idempotency_key = %s
+            """,
+            (
+                f"external_effect.settled:{job['id']}:unknown_after_dispatch:"
+                f"{attempt.attempt_id}",
+            ),
+        ).fetchone()
     assert job_row == {
         "status": "unknown_after_dispatch",
         "attempt_count": 1,
@@ -1016,6 +1027,9 @@ def test_expired_post_provider_lease_becomes_unknown_and_attempt_is_closed() -> 
     }
     assert attempt_row["status"] == "unknown_after_dispatch"
     assert attempt_row["error_code"] == "lease_expired_after_dispatch"
+    assert settlement["event_type"] == "external_effect.settled"
+    assert settlement["payload_json"]["attempt_id"] == attempt.attempt_id
+    assert settlement["status"] == "pending"
     timeline = ExecutionRuntimeReadModel(_database_url()).execution_timeline(job["execution_id"])
     assert timeline is not None
     assert {item["item_kind"] for item in timeline["items"]} >= {
