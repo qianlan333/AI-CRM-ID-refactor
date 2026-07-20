@@ -635,6 +635,43 @@ def test_id_validation_deploy_treats_already_active_sha_as_successful_noop() -> 
     assert "Record successful no-op provenance" in workflow
 
 
+def test_id_validation_deploy_skips_runtime_equivalent_source_only_changes() -> None:
+    workflow = _deploy_contract_source()
+
+    build_index = workflow.index("- name: Build verified release bundle")
+    classifier_index = workflow.index(
+        "scripts/ci/classify_id_validation_runtime_impact.py", build_index
+    )
+    source_only_index = workflow.index('echo "noop_kind=source_only"', classifier_index)
+    bundle_index = workflow.index(
+        "git bundle create release/aicrm-release.bundle", source_only_index
+    )
+    summary_index = workflow.index(
+        "- name: Record runtime-equivalent source-only provenance", source_only_index
+    )
+    transfer_index = workflow.index("- name: Transfer verified release bundle", summary_index)
+    deploy_index = workflow.index("- name: Deploy via SSH", transfer_index)
+
+    assert classifier_index < source_only_index < bundle_index < summary_index
+    assert 'if: steps.release.outputs.noop_kind == \'source_only\'' in workflow[
+        summary_index:transfer_index
+    ]
+    assert "Runtime release SHA: ${{ steps.release.outputs.runtime_release_sha }}" in workflow[
+        summary_index:transfer_index
+    ]
+    assert "Runtime tree digest: ${{ steps.release.outputs.runtime_target_digest }}" in workflow[
+        summary_index:transfer_index
+    ]
+    assert "Validation tree digest: ${{ steps.release.outputs.validation_target_digest }}" in workflow[
+        summary_index:transfer_index
+    ]
+    assert "No SSH deploy or runtime restart was performed" in workflow[
+        summary_index:transfer_index
+    ]
+    assert "steps.release.outputs.noop_kind == ''" in workflow[transfer_index:deploy_index]
+    assert "steps.release.outputs.noop_kind == ''" in workflow[deploy_index:]
+
+
 def test_id_validation_noop_revalidates_origin_checkout_provenance_and_runtime() -> None:
     workflow = _deploy_contract_source()
 
