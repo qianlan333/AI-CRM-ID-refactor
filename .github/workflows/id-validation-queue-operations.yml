@@ -10,6 +10,7 @@ on:
         options:
           - diagnose_customer_refresh
           - diagnose_callback_canary
+          - diagnose_soak_failure
           - activate_test_loopback
           - verify_owner_state
           - run_test_loopback
@@ -413,11 +414,221 @@ jobs:
             }
             print(json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True))
             PY
+  diagnose_soak_failure:
+    if: >-
+      github.repository == 'qianlan333/AI-CRM-ID-refactor' &&
+      inputs.operation == 'diagnose_soak_failure'
+    environment: id-validation
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_REPOSITORY: qianlan333/AI-CRM-ID-refactor
+      EXPECTED_DEPLOY_HOST: 49.232.57.128
+      EXPECTED_SSH_HOST_FINGERPRINT: SHA256:NXSJUveGoNy1lDsa+eOKho1h0ythB+pKTyijv8/KfU0
+      EXPECTED_RELEASE_SHA: ${{ inputs.expected_release_sha }}
+      EXPECTED_POLICY_VERSION: ${{ inputs.policy_version }}
+      PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health
+    steps:
+      - name: Read redacted failed soak evidence from 49
+        env:
+          DEPLOY_HOST: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+          username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
+          key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
+          command_timeout: 5m
+          envs: EXPECTED_REPOSITORY,EXPECTED_DEPLOY_HOST,EXPECTED_RELEASE_SHA,EXPECTED_POLICY_VERSION,PUBLIC_HEALTH_URL,DEPLOY_HOST
+          script: |
+            set -e
+            set -o pipefail
+            test "$DEPLOY_HOST" = "$EXPECTED_DEPLOY_HOST"
+            test "$EXPECTED_REPOSITORY" = "qianlan333/AI-CRM-ID-refactor"
+            printf '%s' "$EXPECTED_RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+            printf '%s' "$EXPECTED_POLICY_VERSION" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$'
+            cd '/home/ubuntu/极简 crm'
+            test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+            test "$(tr -d '\r\n' < .release-sha)" = "$EXPECTED_RELEASE_SHA"
+            test -z "$(git status --porcelain=v1 --untracked-files=all)"
+            actual_public_sha="$(
+              curl --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 -fsS \
+                -D - -o /dev/null "$PUBLIC_HEALTH_URL" |
+                awk 'tolower($1) == "x-aicrm-release-sha:" {print $2}' |
+                tr -d '\r'
+            )"
+            test "$actual_public_sha" = "$EXPECTED_RELEASE_SHA"
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            source /home/ubuntu/venvs/openclaw/bin/activate
+            python3 - <<'PY'
+            import hashlib
+            import json
+            import os
+            import re
+
+            from sqlalchemy import text
+
+            from aicrm_next.shared.db_session import get_session_factory
+            from aicrm_next.shared.sensitive_data import redact_sensitive_text
+
+
+            METRIC_KEYS = (
+                "queue_dlq_count",
+                "webhook_dlq_count",
+                "internal_event_dlq_count",
+                "internal_event_outbox_dlq_count",
+                "external_effect_dlq_count",
+                "broadcast_dlq_count",
+                "queue_unknown_count",
+                "queue_eligible_count",
+                "queue_in_flight_count",
+                "lost_lease_count",
+                "duplicate_provider_call_count",
+                "unexpected_real_target_count",
+                "worker_release_mismatch_count",
+                "fresh_listener_count",
+                "external_effect_eligible_oldest_pending_age_seconds",
+                "internal_event_actionable_oldest_pending_age_seconds",
+                "webhook_eligible_oldest_pending_age_seconds",
+            )
+
+
+            def selected_metrics(value):
+                source = dict(value or {})
+                return {key: int(source.get(key) or 0) for key in METRIC_KEYS}
+
+
+            def safe_error(value):
+                raw = str(value or "")
+                first_line = redact_sensitive_text(raw).splitlines()[0] if raw else ""
+                first_line = re.sub(r"'[^']{4,}'", "'[redacted-value]'", first_line)
+                return {
+                    "summary": first_line[:500],
+                    "sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest() if raw else "",
+                }
+
+
+            expected_policy_version = os.environ["EXPECTED_POLICY_VERSION"]
+            with get_session_factory()() as session:
+                session.execute(text("SET TRANSACTION READ ONLY"))
+                soak = session.execute(
+                    text(
+                        """
+                        SELECT soak_id, release_sha, active_generation, policy_version,
+                               status, started_at, required_until, completed_at,
+                               invalidated_at, invalidated_reason,
+                               baseline_json, latest_snapshot_json
+                        FROM queue_runtime_soak_run
+                        ORDER BY started_at DESC
+                        LIMIT 1
+                        """
+                    )
+                ).mappings().one()
+                if str(soak["policy_version"]) != expected_policy_version:
+                    raise SystemExit("latest soak policy does not match the requested policy")
+                snapshots = session.execute(
+                    text(
+                        """
+                        SELECT captured_at, release_sha, ok, violations_json, metrics_json
+                        FROM queue_runtime_soak_snapshot
+                        WHERE soak_id = :soak_id
+                        ORDER BY captured_at
+                        """
+                    ),
+                    {"soak_id": soak["soak_id"]},
+                ).mappings().all()
+                terminal_rows = session.execute(
+                    text(
+                        """
+                        SELECT * FROM (
+                            SELECT 'external_effect' AS queue_kind, id, effect_type AS work_type,
+                                   status, attempt_count, max_attempts, last_error_code,
+                                   last_error_message, policy_version, worker_generation,
+                                   provider_call_started_at IS NOT NULL AS provider_boundary_started,
+                                   side_effect_executed,
+                                   COALESCE(completed_at, updated_at) AS terminal_at
+                            FROM external_effect_job
+                            WHERE status IN ('failed_terminal', 'blocked', 'unknown_after_dispatch')
+                            UNION ALL
+                            SELECT 'internal_event', id, consumer_name, status,
+                                   attempt_count, max_attempts, last_error_code,
+                                   last_error_message, policy_version, worker_generation,
+                                   FALSE, FALSE, COALESCE(finished_at, updated_at)
+                            FROM internal_event_consumer_run
+                            WHERE status IN ('failed_terminal', 'blocked')
+                            UNION ALL
+                            SELECT 'internal_event_outbox', id, event_type, status,
+                                   attempt_count, max_attempts, last_error_code,
+                                   last_error_message, policy_version, worker_generation,
+                                   FALSE, FALSE, updated_at
+                            FROM internal_event_outbox
+                            WHERE status = 'failed_terminal'
+                            UNION ALL
+                            SELECT 'webhook_inbox', id, provider || ':' || event_family, status,
+                                   attempt_count, max_attempts, last_error_code,
+                                   last_error_message, policy_version, worker_generation,
+                                   FALSE, FALSE, COALESCE(finished_at, updated_at)
+                            FROM webhook_inbox
+                            WHERE status IN ('failed_terminal', 'dead_letter')
+                            UNION ALL
+                            SELECT 'broadcast', id, source_type, status,
+                                   attempt_count, 0, '', last_error, '', 0,
+                                   dispatch_started_at IS NOT NULL,
+                                   side_effect_executed,
+                                   COALESCE(completed_at, updated_at)
+                            FROM broadcast_jobs
+                            WHERE COALESCE(NULLIF(execution_owner, ''), 'legacy_frozen') = 'legacy_frozen'
+                              AND status IN ('failed', 'failed_terminal', 'blocked', 'unknown_after_dispatch')
+                        ) terminal
+                        WHERE terminal_at >= :started_at
+                          AND terminal_at <= COALESCE(:completed_at, CURRENT_TIMESTAMP)
+                        ORDER BY terminal_at, queue_kind, id
+                        LIMIT 100
+                        """
+                    ),
+                    {
+                        "started_at": soak["started_at"],
+                        "completed_at": soak["completed_at"],
+                    },
+                ).mappings().all()
+
+            soak_payload = dict(soak)
+            baseline = selected_metrics(soak_payload.pop("baseline_json"))
+            latest = selected_metrics(soak_payload.pop("latest_snapshot_json"))
+            deltas = {key: latest[key] - baseline[key] for key in METRIC_KEYS}
+            safe_terminal_rows = []
+            for raw in terminal_rows:
+                row = dict(raw)
+                row["last_error_message"] = safe_error(row.get("last_error_message"))
+                safe_terminal_rows.append(row)
+            payload = {
+                "read_only": True,
+                "target_values_redacted": True,
+                "soak": soak_payload,
+                "baseline_metrics": baseline,
+                "latest_metrics": latest,
+                "metric_deltas": deltas,
+                "snapshots": [
+                    {
+                        "captured_at": row["captured_at"],
+                        "release_sha": row["release_sha"],
+                        "ok": bool(row["ok"]),
+                        "violations": list(row["violations_json"] or []),
+                        "metrics": selected_metrics(row["metrics_json"]),
+                    }
+                    for row in snapshots
+                ],
+                "terminal_rows_during_soak": safe_terminal_rows,
+            }
+            print(json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True))
+            PY
   operate:
     if: >-
       github.repository == 'qianlan333/AI-CRM-ID-refactor' &&
       inputs.operation != 'diagnose_customer_refresh' &&
-      inputs.operation != 'diagnose_callback_canary'
+      inputs.operation != 'diagnose_callback_canary' &&
+      inputs.operation != 'diagnose_soak_failure'
     environment: id-validation
     runs-on: ubuntu-latest
     env:

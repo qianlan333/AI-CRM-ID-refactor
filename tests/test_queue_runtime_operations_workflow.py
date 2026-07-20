@@ -94,7 +94,7 @@ def test_customer_refresh_diagnostic_is_read_only_redacted_and_exact_release_bou
 def test_callback_canary_diagnostic_is_read_only_redacted_and_exact_release_bound() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
     diagnostic = source[
-        source.index("  diagnose_callback_canary:") : source.index("  operate:")
+        source.index("  diagnose_callback_canary:") : source.index("  diagnose_soak_failure:")
     ]
 
     assert "- diagnose_callback_canary" in source
@@ -114,6 +114,57 @@ def test_callback_canary_diagnostic_is_read_only_redacted_and_exact_release_boun
     assert "provider_boundary_count" in diagnostic
     assert "side_effect_executed_count" in diagnostic
     assert "target_values_redacted" in diagnostic
+    for forbidden in (
+        "INSERT INTO",
+        "UPDATE ",
+        "DELETE FROM",
+        "qyapi.weixin.qq.com",
+        "payload_xml",
+        "payload_json AS",
+        "raw_body",
+        "external_userid",
+        "corp_id",
+        "WECOM_CANARY_SPEC_B64",
+    ):
+        assert forbidden not in diagnostic
+
+
+def test_soak_failure_diagnostic_is_read_only_redacted_and_exact_release_bound() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    diagnostic = source[
+        source.index("  diagnose_soak_failure:") : source.index("  operate:")
+    ]
+
+    assert "- diagnose_soak_failure" in source
+    assert "inputs.operation == 'diagnose_soak_failure'" in diagnostic
+    assert "environment: id-validation" in diagnostic
+    assert "EXPECTED_DEPLOY_HOST: 49.232.57.128" in diagnostic
+    assert "PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health" in diagnostic
+    assert "EXPECTED_POLICY_VERSION: ${{ inputs.policy_version }}" in diagnostic
+    assert "secrets.ID_VALIDATION_DEPLOY_HOST" in diagnostic
+    assert "secrets.ID_VALIDATION_DEPLOY_USER" in diagnostic
+    assert "secrets.ID_VALIDATION_DEPLOY_SSH_KEY" in diagnostic
+    assert 'git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"' in diagnostic
+    assert 'actual_public_sha" = "$EXPECTED_RELEASE_SHA"' in diagnostic
+    assert "git status --porcelain=v1 --untracked-files=all" in diagnostic
+    assert 'session.execute(text("SET TRANSACTION READ ONLY"))' in diagnostic
+    assert "queue_runtime_soak_snapshot" in diagnostic
+    assert "metric_deltas" in diagnostic
+    assert "terminal_rows_during_soak" in diagnostic
+    assert "redact_sensitive_text" in diagnostic
+    assert "target_values_redacted" in diagnostic
+    for evaluator_metric in (
+        "lost_lease_count",
+        "duplicate_provider_call_count",
+        "unexpected_real_target_count",
+        "worker_release_mismatch_count",
+        "fresh_listener_count",
+        "external_effect_eligible_oldest_pending_age_seconds",
+        "internal_event_actionable_oldest_pending_age_seconds",
+        "webhook_eligible_oldest_pending_age_seconds",
+    ):
+        assert evaluator_metric in diagnostic
+    assert diagnostic.count("unknown_after_dispatch") >= 2
     for forbidden in (
         "INSERT INTO",
         "UPDATE ",
