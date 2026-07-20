@@ -1800,8 +1800,10 @@ def test_internal_event_worker_systemd_units_are_deployable():
         "radar.opened:customer_timeline_projection_consumer",
         "commerce.product_enrolled:customer_timeline_projection_consumer",
         "customer_read_model.refresh.requested:customer_read_model_refresh_intent_consumer",
+        "customer_read_model.refreshed:customer_read_model_refresh_completed_audit_consumer",
     ):
         assert pair in service
+    assert "customer_read_model.refresh.requested,customer_read_model.refreshed,external_effect.completed" in service
     assert "external_effect.completed" in service
     assert "external_effect.completed:external_effect_identity_continuation_consumer" in service
     assert "external_effect.completed:external_effect_group_ops_continuation_consumer" in service
