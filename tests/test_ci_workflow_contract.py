@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_FAST_WORKFLOW = ROOT / ".github" / "workflows" / "ci-fast.yml"
 FULL_REGRESSION_WORKFLOW = ROOT / ".github" / "workflows" / "full-regression.yml"
 DURATION_BASELINE_REFRESH_WORKFLOW = ROOT / ".github" / "workflows" / "refresh-pytest-duration-baseline.yml"
+BASELINE_PR_VALIDATION_WORKFLOW = ROOT / ".github" / "workflows" / "validate-pytest-duration-baseline-pr.yml"
 TEST_GOVERNANCE_OBSERVABILITY_WORKFLOW = ROOT / ".github" / "workflows" / "test-governance-observability.yml"
 DEPLOY_WORKFLOW = ROOT / ".github" / "workflows" / "deploy.yml"
 REMOTE_DEPLOY_SCRIPT = ROOT / "scripts" / "ops" / "deploy_id_validation_remote.sh"
@@ -136,6 +137,8 @@ def test_duration_baseline_refresh_is_isolated_to_trusted_successful_main_runs()
     assert "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c" in source
     assert "run-id: ${{ github.event.workflow_run.id }}" in source
     assert "python scripts/ci/build_pytest_duration_baseline.py" in source
+    assert 'junit_file_count=$((junit_file_count + 1))' in source
+    assert 'if [ "$junit_file_count" -ne 8 ]; then' in source
     assert 'branch="automation/pytest-duration-baseline"' in source
     assert "name: Publish baseline branch" in source
     assert "gh pr create" in source
@@ -144,6 +147,38 @@ def test_duration_baseline_refresh_is_isolated_to_trusted_successful_main_runs()
     assert "continue-on-error: true" in source
     assert "Report manual pull request fallback" in source
     assert "compare/main...${branch}?expand=1" in source
+    assert "gh pr edit" in source
+    assert "printf 'Source SHA: `%s`\\n' \"$SOURCE_SHA\"" in source
+
+
+def test_baseline_pr_validation_is_read_only_trusted_and_rebuilds_exact_evidence() -> None:
+    source = _source(BASELINE_PR_VALIDATION_WORKFLOW)
+    trigger = source[source.index("on:") : source.index("permissions:")]
+    permissions = source[source.index("permissions:") : source.index("jobs:")]
+
+    assert "pull_request_target:" in trigger
+    assert "docs/ci/pytest_duration_baseline.json" in trigger
+    assert "push:" not in trigger
+    assert "workflow_dispatch:" not in trigger
+    assert "actions: read" in permissions
+    assert "contents: read" in permissions
+    assert "pull-requests: read" in permissions
+    assert "write" not in permissions
+    assert "ci-fast-result:" in source
+    assert "github-actions[bot]" in source
+    assert "automation/pytest-duration-baseline" in source
+    assert "github.event.pull_request.head.repo.full_name" in source
+    assert "github.event.pull_request.base.sha" in source
+    assert "github.event.pull_request.head.sha" in source
+    assert "git diff --name-only" in source
+    assert "validate_pytest_duration_baseline_pr.py" in source
+    assert "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c" in source
+    assert "build_pytest_duration_baseline.py" in source
+    assert 'junit_file_count=$((junit_file_count + 1))' in source
+    assert 'if [ "$junit_file_count" -ne 8 ]; then' in source
+    assert "cmp --silent" in source
+    assert "ref: ${{ github.event.pull_request.base.sha }}" in source
+    assert "ref: ${{ github.event.pull_request.head.sha }}" not in source
 
 
 def test_governance_observability_is_read_only_and_aggregates_retained_evidence() -> None:
