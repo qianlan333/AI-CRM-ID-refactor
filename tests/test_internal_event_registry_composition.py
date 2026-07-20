@@ -4,6 +4,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aicrm_next.external_effect_composition import build_external_effect_continuation_consumers
+from aicrm_next.customer_read_model.refresh_intents import (
+    CUSTOMER_REFRESH_COMPLETED_CONSUMER,
+    CUSTOMER_REFRESH_COMPLETED_EVENT,
+)
 from aicrm_next.internal_event_composition import build_internal_event_consumer_registry
 from aicrm_next.main import create_app
 from aicrm_next.platform_foundation.external_effects.completion_events import (
@@ -50,6 +54,11 @@ def test_composition_builds_complete_isolated_registries() -> None:
     assert {item["consumer_name"] for item in manifest["consumers"]} == continuation_consumers
     assert LEGACY_EXTERNAL_EFFECT_COMPLETION_CONSUMER not in {
         item["consumer_name"] for item in manifest["consumers"]
+    }
+    customer_refresh_manifest = first.fanout_manifest_for(CUSTOMER_REFRESH_COMPLETED_EVENT)
+    assert customer_refresh_manifest["expected_consumer_count"] == 1
+    assert {item["consumer_name"] for item in customer_refresh_manifest["consumers"]} == {
+        CUSTOMER_REFRESH_COMPLETED_CONSUMER
     }
 
     with pytest.raises(RuntimeError, match="fanout contract is sealed"):

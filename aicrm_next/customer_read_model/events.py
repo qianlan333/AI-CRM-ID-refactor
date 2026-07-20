@@ -12,6 +12,8 @@ from aicrm_next.platform_foundation.internal_events import (
 
 from .refresh_intents import (
     CUSTOMER_DIRTY_CONSUMER,
+    CUSTOMER_REFRESH_COMPLETED_CONSUMER,
+    CUSTOMER_REFRESH_COMPLETED_EVENT,
     CUSTOMER_REFRESH_CONSUMER,
     CUSTOMER_REFRESH_REQUESTED_EVENT,
     CUSTOMER_SOURCE_EVENTS,
@@ -79,6 +81,33 @@ def customer_read_model_refresh_consumer(
     )
 
 
+def customer_read_model_refresh_completed_audit_consumer(
+    event: InternalEvent,
+    run: InternalEventConsumerRun,
+) -> InternalEventConsumerResult:
+    """Persist the consumer-run receipt for a completed refresh event."""
+
+    generation = int(dict(event.payload_json or {}).get("generation") or 0)
+    receipt = {
+        "ok": True,
+        "acknowledged": True,
+        "event_id": event.event_id,
+        "consumer_name": run.consumer_name,
+        "generation": generation,
+    }
+    return InternalEventConsumerResult(
+        status="succeeded",
+        request_summary={
+            "event_id": event.event_id,
+            "event_type": event.event_type,
+            "consumer_name": run.consumer_name,
+            "generation": generation,
+        },
+        response_summary=receipt,
+        result_summary=receipt,
+    )
+
+
 def register_customer_read_model_event_consumers(
     registry: InternalEventConsumerRegistry | None = None,
 ) -> None:
@@ -106,6 +135,13 @@ def register_customer_read_model_event_consumers(
         consumer_type="projection",
         max_attempts=5,
     )
+    registry.register(
+        CUSTOMER_REFRESH_COMPLETED_EVENT,
+        CUSTOMER_REFRESH_COMPLETED_CONSUMER,
+        customer_read_model_refresh_completed_audit_consumer,
+        consumer_type="projection",
+        max_attempts=3,
+    )
 
 
 def _summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -127,6 +163,7 @@ def _summary(payload: dict[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "customer_read_model_dirty_consumer",
+    "customer_read_model_refresh_completed_audit_consumer",
     "customer_read_model_refresh_consumer",
     "customer_timeline_projection_consumer",
     "register_customer_read_model_event_consumers",

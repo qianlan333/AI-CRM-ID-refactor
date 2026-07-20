@@ -2771,6 +2771,13 @@
       "max_attempts": 5
     },
     {
+      "consumer_name": "customer_read_model_refresh_completed_audit_consumer",
+      "consumer_type": "projection",
+      "event_type": "customer_read_model.refreshed",
+      "handler_registered": true,
+      "max_attempts": 3
+    },
+    {
       "consumer_name": "external_effect_automation_continuation_consumer",
       "consumer_type": "orchestration",
       "event_type": "external_effect.completed",
