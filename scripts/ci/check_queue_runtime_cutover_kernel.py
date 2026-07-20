@@ -17,6 +17,7 @@ from aicrm_next.platform_foundation.execution_runtime.cutover import (
     PR3_LEGACY_TIMER_OWNERS,
     PR3_OWNER_INVENTORY_NAME,
     PR3_REPLACEMENT_TIMER_OWNERS,
+    PR3_SUCCESSOR_OWNERS,
 )
 
 
@@ -147,8 +148,8 @@ def collect_errors(root: Path = ROOT) -> list[str]:
     manifest = json.loads(
         (root / "deploy" / "production_runtime_units.json").read_text(encoding="utf-8")
     )
-    if manifest.get("schema_version") != 3:
-        errors.append("production runtime manifest must use cutover-aware schema_version 3")
+    if manifest.get("schema_version") != 4:
+        errors.append("production runtime manifest must use successor-aware schema_version 4")
     cutover = manifest.get("cutover_managed_legacy") or {}
     actual_timer_owners = tuple(
         (str(item.get("timer") or ""), str(item.get("service") or ""))
@@ -197,6 +198,22 @@ def collect_errors(root: Path = ROOT) -> list[str]:
         errors.append("cutover replacement timers must use the reviewed PR-3 owner inventory")
     if replacement_pairs != PR3_REPLACEMENT_TIMER_OWNERS:
         errors.append("cutover replacement timers must exactly match the reviewed PR-3 inventory")
+    successor = manifest.get("cutover_successor_matrix") or {}
+    successor_rows = tuple(
+        (
+            str(item.get("legacy_owner") or ""),
+            str(item.get("capability") or ""),
+            str(item.get("successor_kind") or ""),
+            str(item.get("successor_unit") or ""),
+            str(item.get("health_contract") or ""),
+            str(item.get("backlog_contract") or ""),
+        )
+        for item in successor.get("owners") or []
+    )
+    if str(successor.get("owner_inventory") or "") != PR3_OWNER_INVENTORY_NAME:
+        errors.append("cutover successor matrix must use the reviewed PR-3 owner inventory")
+    if successor_rows != PR3_SUCCESSOR_OWNERS:
+        errors.append("every reviewed PR-3 owner must have the exact approved successor contract")
     if (AI_AUDIENCE_DAILY_TIMER, AI_AUDIENCE_DAILY_SERVICE) in active_timer_pairs:
         errors.append("the 02:00 AI Audience replacement timer must not autostart before cutover")
     for service in sorted(active_service_names):

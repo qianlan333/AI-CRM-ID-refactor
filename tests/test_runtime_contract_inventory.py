@@ -103,6 +103,20 @@ def test_runtime_contract_inventory_covers_r00_behavior_surfaces() -> None:
         "service": "aicrm-ai-audience-daily-intent.service",
         "owner_inventory": "pr3",
     }
+    assert runtime_units["aicrm-next-broadcast-delegation.timer"] == {
+        "unit": "aicrm-next-broadcast-delegation.timer",
+        "kind": "timer",
+        "state": "cutover_replacement_autostart",
+        "service": "aicrm-next-broadcast-delegation.service",
+        "owner_inventory": "pr3",
+    }
+    assert runtime_units["aicrm-next-group-ops-planning.timer"] == {
+        "unit": "aicrm-next-group-ops-planning.timer",
+        "kind": "timer",
+        "state": "cutover_replacement_autostart",
+        "service": "aicrm-next-group-ops-planning.service",
+        "owner_inventory": "pr3",
+    }
     assert "DATABASE_URL" in inventory["environment_variables"]
     assert {
         "AICRM_AUTH_ARCHIVE_WORKER_CLIENT_ID",

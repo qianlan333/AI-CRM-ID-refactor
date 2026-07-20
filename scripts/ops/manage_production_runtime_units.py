@@ -48,6 +48,16 @@ class RetiredDropIn:
     dropin: str
 
 
+@dataclass(frozen=True)
+class SuccessorOwner:
+    legacy_owner: str
+    capability: str
+    successor_kind: str
+    successor_unit: str
+    health_contract: str
+    backlog_contract: str
+
+
 def load_manifest(path: Path = MANIFEST_PATH) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -123,6 +133,46 @@ def cutover_replacement_owner_inventory(manifest: dict[str, Any]) -> str:
     if not isinstance(section, dict):
         raise ValueError("cutover_replacement_autostart must be an object")
     return str(section.get("owner_inventory") or "").strip()
+
+
+def cutover_successor_owner_inventory(manifest: dict[str, Any]) -> str:
+    section = manifest.get("cutover_successor_matrix") or {}
+    if not isinstance(section, dict):
+        raise ValueError("cutover_successor_matrix must be an object")
+    return str(section.get("owner_inventory") or "").strip()
+
+
+def cutover_successor_owners(manifest: dict[str, Any]) -> list[SuccessorOwner]:
+    section = manifest.get("cutover_successor_matrix") or {}
+    if not isinstance(section, dict):
+        raise ValueError("cutover_successor_matrix must be an object")
+    owners: list[SuccessorOwner] = []
+    for item in section.get("owners") or []:
+        if not isinstance(item, dict):
+            raise ValueError("cutover successor owners must be objects")
+        owner = SuccessorOwner(
+            legacy_owner=str(item.get("legacy_owner") or "").strip(),
+            capability=str(item.get("capability") or "").strip(),
+            successor_kind=str(item.get("successor_kind") or "").strip(),
+            successor_unit=str(item.get("successor_unit") or "").strip(),
+            health_contract=str(item.get("health_contract") or "").strip(),
+            backlog_contract=str(item.get("backlog_contract") or "").strip(),
+        )
+        if not all(
+            (
+                owner.legacy_owner,
+                owner.capability,
+                owner.successor_kind,
+                owner.successor_unit,
+                owner.health_contract,
+                owner.backlog_contract,
+            )
+        ):
+            raise ValueError("cutover successor owners must declare every contract field")
+        if owner.successor_kind not in {"persistent_service", "timer"}:
+            raise ValueError("cutover successor_kind must be persistent_service or timer")
+        owners.append(owner)
+    return owners
 
 
 def cutover_legacy_persistent_services(manifest: dict[str, Any]) -> list[ServiceUnit]:
@@ -353,8 +403,8 @@ def _validate_deploy_guards() -> None:
 
 
 def validate_manifest(manifest: dict[str, Any], *, validate_unit_files: bool = True) -> None:
-    if manifest.get("schema_version") != 3:
-        raise ValueError("production runtime units manifest schema_version must be 3")
+    if manifest.get("schema_version") != 4:
+        raise ValueError("production runtime units manifest schema_version must be 4")
     drain_timeout = int(manifest.get("timer_service_drain_timeout_seconds") or DEFAULT_TIMER_SERVICE_DRAIN_TIMEOUT_SECONDS)
     if drain_timeout < 1 or drain_timeout > 900:
         raise ValueError("timer_service_drain_timeout_seconds must be between 1 and 900")
@@ -366,6 +416,8 @@ def validate_manifest(manifest: dict[str, Any], *, validate_unit_files: bool = T
     cutover_persistent = cutover_legacy_persistent_services(manifest)
     replacement_inventory = cutover_replacement_owner_inventory(manifest)
     replacement_timers = cutover_replacement_timers(manifest)
+    successor_inventory = cutover_successor_owner_inventory(manifest)
+    successors = cutover_successor_owners(manifest)
     if not cutover_inventory:
         raise ValueError("cutover_managed_legacy.owner_inventory is required")
     if not cutover_timers and not cutover_persistent:
@@ -374,6 +426,8 @@ def validate_manifest(manifest: dict[str, Any], *, validate_unit_files: bool = T
         raise ValueError("cutover replacement and legacy owner inventories must match")
     if not replacement_timers:
         raise ValueError("cutover_replacement_autostart must declare at least one replacement")
+    if successor_inventory != cutover_inventory:
+        raise ValueError("cutover successor and legacy owner inventories must match")
     approval = approval_timers(manifest)
     approval_required = [unit.timer for unit in approval]
     retired_forbidden = retired_units(manifest)
@@ -385,6 +439,33 @@ def validate_manifest(manifest: dict[str, Any], *, validate_unit_files: bool = T
     cutover_service_names = [unit.service for unit in cutover_timers] + [unit.service for unit in cutover_persistent]
     replacement_timer_names = [unit.timer for unit in replacement_timers]
     replacement_service_names = [unit.service for unit in replacement_timers]
+    legacy_owner_names = [unit.timer for unit in cutover_timers] + [
+        unit.service for unit in cutover_persistent
+    ]
+    successor_legacy_names = [owner.legacy_owner for owner in successors]
+    if (
+        len(successor_legacy_names) != len(set(successor_legacy_names))
+        or set(successor_legacy_names) != set(legacy_owner_names)
+    ):
+        raise ValueError("every retired owner must declare exactly one successor")
+    successor_timer_names = [
+        owner.successor_unit for owner in successors if owner.successor_kind == "timer"
+    ]
+    if set(successor_timer_names) != set(replacement_timer_names):
+        raise ValueError("every replacement timer must own exactly one retired capability")
+    successor_service_names = {
+        owner.successor_unit
+        for owner in successors
+        if owner.successor_kind == "persistent_service"
+    }
+    if not successor_service_names.issubset(set(active_service_names)):
+        raise ValueError("persistent successors must be active canonical services")
+    legacy_unit_names = set(cutover_legacy_units(manifest))
+    invalid_successors = sorted(
+        owner.successor_unit for owner in successors if owner.successor_unit in legacy_unit_names
+    )
+    if invalid_successors:
+        raise ValueError(f"legacy owners cannot be their own successor: {invalid_successors}")
     _unique(
         active_timer_names
         + approval_required

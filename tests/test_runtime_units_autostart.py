@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import subprocess
 from pathlib import Path
 
@@ -39,6 +40,8 @@ def test_runtime_units_manifest_classifies_every_deploy_timer() -> None:
     assert "openclaw-customer-read-model-refresh.timer" in cutover
     assert "openclaw-ai-audience-scheduler.timer" in cutover
     assert "aicrm-ai-audience-daily-intent.timer" in replacements
+    assert "aicrm-next-broadcast-delegation.timer" in replacements
+    assert "aicrm-next-group-ops-planning.timer" in replacements
     assert "aicrm-ai-audience-daily-intent.timer" not in active
     assert "openclaw-wechat-pay-order-reconciliation-worker.timer" in active
     assert "openclaw-external-push-worker.timer" in retired_forbidden
@@ -55,7 +58,47 @@ def test_runtime_units_manifest_classifies_every_deploy_timer() -> None:
 def test_runtime_units_manifest_declares_primary_web_service() -> None:
     assert _manifest()["primary_web"] == {"service": "openclaw-wecom-postgres.service"}
     assert _manifest()["timer_service_drain_timeout_seconds"] == 600
-    assert _manifest()["schema_version"] == 3
+    assert _manifest()["schema_version"] == 4
+
+
+def test_runtime_units_manifest_maps_every_retired_owner_to_one_successor() -> None:
+    manifest = _manifest()
+    matrix = manifest["cutover_successor_matrix"]
+    retired_owners = {
+        *(item["timer"] for item in manifest["cutover_managed_legacy"]["timers"]),
+        *(
+            item["service"]
+            for item in manifest["cutover_managed_legacy"]["persistent_services"]
+        ),
+    }
+    owners = [item["legacy_owner"] for item in matrix["owners"]]
+
+    assert matrix["owner_inventory"] == "pr3"
+    assert set(owners) == retired_owners
+    assert len(owners) == len(set(owners))
+    assert {
+        item["successor_unit"]
+        for item in matrix["owners"]
+        if item["successor_kind"] == "timer"
+    } == {
+        "aicrm-ai-audience-daily-intent.timer",
+        "aicrm-next-broadcast-delegation.timer",
+        "aicrm-next-group-ops-planning.timer",
+    }
+    for item in matrix["owners"]:
+        assert item["capability"]
+        assert item["successor_kind"] in {"persistent_service", "timer"}
+        assert item["successor_unit"]
+        assert item["health_contract"]
+        assert item["backlog_contract"]
+
+
+def test_runtime_units_manifest_rejects_a_retired_owner_without_successor() -> None:
+    manifest = deepcopy(_manifest())
+    manifest["cutover_successor_matrix"]["owners"].pop()
+
+    with pytest.raises(ValueError, match="exactly one successor"):
+        runtime_units.validate_manifest(manifest, validate_unit_files=False)
 
 
 def test_runtime_units_manifest_declares_exact_reviewed_pr3_cutover_inventory() -> None:
@@ -776,9 +819,11 @@ def test_post_cutover_deploy_never_restarts_or_installs_old_owners(
     assert f"sudo systemctl is-enabled {persistent}" in output
     assert f"sudo systemctl is-active {persistent}" in output
     assert "cutover_managed_legacy=pr3 generation=17 action=verified_retired" in output
-    assert "sudo systemctl enable aicrm-ai-audience-daily-intent.timer" not in output
-    assert "sudo systemctl restart aicrm-ai-audience-daily-intent.timer" not in output
-    assert "sudo systemctl disable --now aicrm-ai-audience-daily-intent.timer" in output
+    for item in _manifest()["cutover_replacement_autostart"]["timers"]:
+        timer = item["timer"]
+        assert f"sudo systemctl enable {timer}" not in output
+        assert f"sudo systemctl restart {timer}" not in output
+        assert f"sudo systemctl disable --now {timer}" in output
     assert "cutover_replacement_autostart=pr3 generation=17 action=verified_disabled" in output
 
 
@@ -805,7 +850,7 @@ def test_post_cutover_stop_phase_only_verifies_old_owner_retirement(
     assert "cutover_managed_legacy=pr3 generation=17 action=verified_retired" in output
 
 
-def test_committed_generation_deploy_activates_replacement_timer_only(
+def test_committed_generation_deploy_activates_every_reviewed_replacement_timer(
     monkeypatch,
     tmp_path: Path,
     capsys,
@@ -820,10 +865,13 @@ def test_committed_generation_deploy_activates_replacement_timer_only(
     assert runtime_units.main(["--phase", "install-enable-after-web-health", "--dry-run"]) == 0
     output = capsys.readouterr().out
 
-    assert "sudo cp deploy/aicrm-ai-audience-daily-intent.service /etc/systemd/system/" in output
-    assert "sudo cp deploy/aicrm-ai-audience-daily-intent.timer /etc/systemd/system/" in output
-    assert "sudo systemctl enable aicrm-ai-audience-daily-intent.timer" in output
-    assert "sudo systemctl restart aicrm-ai-audience-daily-intent.timer" in output
+    for item in _manifest()["cutover_replacement_autostart"]["timers"]:
+        timer = item["timer"]
+        service = item["service"]
+        assert f"sudo cp deploy/{service} /etc/systemd/system/" in output
+        assert f"sudo cp deploy/{timer} /etc/systemd/system/" in output
+        assert f"sudo systemctl enable {timer}" in output
+        assert f"sudo systemctl restart {timer}" in output
     assert "cutover_replacement_autostart=pr3 generation=17 action=verified_active" in output
     for item in _manifest()["cutover_managed_legacy"]["timers"]:
         assert f"sudo systemctl restart {item['timer']}" not in output
