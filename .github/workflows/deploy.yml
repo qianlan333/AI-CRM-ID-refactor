@@ -183,6 +183,8 @@ jobs:
             fi
             echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
             echo "noop=true" >> "$GITHUB_OUTPUT"
+            echo "noop_kind=same_sha" >> "$GITHUB_OUTPUT"
+            echo "runtime_release_sha=$verified_sha" >> "$GITHUB_OUTPUT"
             echo "target environment already runs the requested release; successful no-op"
             exit 0
           fi
@@ -197,8 +199,30 @@ jobs:
             echo "target environment release is not an ancestor of the requested release"
             exit 1
           fi
+          python3 scripts/ci/classify_id_validation_runtime_impact.py \
+            --base-ref "$base_sha" \
+            --target-ref "$verified_sha" \
+            --output /tmp/aicrm-id-runtime-impact.json \
+            --github-output "$GITHUB_OUTPUT"
+          runtime_required="$(
+            python3 -c 'import json; print(str(json.load(open("/tmp/aicrm-id-runtime-impact.json", encoding="utf-8"))["runtime_required"]).lower())'
+          )"
+          if [ "$runtime_required" = "false" ]; then
+            if [ "$base_source" != "public_health" ]; then
+              echo "source-only no-deploy is forbidden while public health is unavailable"
+              exit 1
+            fi
+            echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+            echo "noop=true" >> "$GITHUB_OUTPUT"
+            echo "noop_kind=source_only" >> "$GITHUB_OUTPUT"
+            echo "runtime_release_sha=$base_sha" >> "$GITHUB_OUTPUT"
+            echo "source change is runtime-equivalent; active runtime remains $base_sha"
+            exit 0
+          fi
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
           echo "noop=false" >> "$GITHUB_OUTPUT"
+          echo "noop_kind=" >> "$GITHUB_OUTPUT"
+          echo "runtime_release_sha=$verified_sha" >> "$GITHUB_OUTPUT"
           mkdir -p release
           git update-ref refs/deploy/release "$verified_sha"
           git update-ref refs/deploy/base "$base_sha"
@@ -222,7 +246,7 @@ jobs:
           echo "bundle_sha256=$bundle_sha256" >> "$GITHUB_OUTPUT"
 
       - name: Verify already active ID release
-        if: steps.release.outputs.noop == 'true'
+        if: steps.release.outputs.noop == 'true' && steps.release.outputs.noop_kind == 'same_sha'
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
@@ -306,7 +330,7 @@ jobs:
             trap - EXIT
 
       - name: Record successful no-op provenance
-        if: steps.release.outputs.noop == 'true'
+        if: steps.release.outputs.noop == 'true' && steps.release.outputs.noop_kind == 'same_sha'
         run: |
           {
             echo "## ID validation deployment"
@@ -319,8 +343,26 @@ jobs:
             echo "- Environment: id-validation"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Record runtime-equivalent source-only provenance
+        if: steps.release.outputs.noop_kind == 'source_only'
+        run: |
+          {
+            echo "## ID validation source-only verification"
+            echo ""
+            echo "- Result: runtime-equivalent source change"
+            echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Source SHA: ${{ github.event.workflow_run.head_sha }}"
+            echo "- Runtime release SHA: ${{ steps.release.outputs.runtime_release_sha }}"
+            echo "- Runtime tree digest: ${{ steps.release.outputs.runtime_target_digest }}"
+            echo "- Validation tree digest: ${{ steps.release.outputs.validation_target_digest }}"
+            echo "- Classification digest: ${{ steps.release.outputs.classification_digest }}"
+            echo "- Changed paths: ${{ steps.release.outputs.changed_path_count }}"
+            echo "- Runtime changed paths: ${{ steps.release.outputs.runtime_changed_path_count }}"
+            echo "- No SSH deploy or runtime restart was performed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Transfer verified release bundle
-        if: steps.release.outputs.noop != 'true'
+        if: steps.release.outputs.noop != 'true' && steps.release.outputs.noop_kind == ''
         uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
         with:
           host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
@@ -333,7 +375,7 @@ jobs:
           overwrite: true
 
       - name: Deploy via SSH
-        if: steps.release.outputs.noop != 'true'
+        if: steps.release.outputs.noop != 'true' && steps.release.outputs.noop_kind == ''
         env:
           RELEASE_REPOSITORY: ${{ github.repository }}
           RELEASE_RUN_ID: ${{ github.run_id }}

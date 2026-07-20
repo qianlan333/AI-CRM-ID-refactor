@@ -466,13 +466,16 @@ jobs:
           ref: ${{ inputs.expected_release_sha }}
           fetch-depth: 0
 
-      - name: Verify release is current main and public ID release
+      - name: Verify release is a main ancestor and the public ID release
         run: |
           set -e
           set -o pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
           git fetch --no-tags origin main
-          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_RELEASE_SHA"
+          if ! git merge-base --is-ancestor "$EXPECTED_RELEASE_SHA" FETCH_HEAD; then
+            echo "deployed ID release is not in current main history"
+            exit 1
+          fi
           rm -f /tmp/aicrm-id-operation.headers
           curl --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 -fsS \
             -D /tmp/aicrm-id-operation.headers \

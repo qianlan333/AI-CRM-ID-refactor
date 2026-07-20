@@ -19,6 +19,27 @@ The workflow uses only the environment-scoped secrets
 entrypoint, manual promotion input, cross-repository token, or credential for
 `150.158.82.186`.
 
+## Source and runtime identity
+
+The repository `main` SHA is source provenance, not automatically a new runtime
+identity. The deploy workflow computes deterministic runtime and validation tree
+digests between the active release and the verified `main` SHA. Only explicitly
+non-runtime paths under `.github/`, `docs/`, `scripts/ci/`, `tests/`, and the
+small root metadata allowlist are excluded from the runtime digest. Every unknown
+path fails closed as runtime-impacting.
+
+When the runtime digest is unchanged and public health proves the active release,
+the workflow records a source-only verification in the Actions summary and does
+not transfer a bundle, open SSH, change the server checkout, or restart runtime
+units. The active release SHA therefore remains the immutable queue-validation
+and soak candidate while `main` may advance through runtime-equivalent changes.
+Queue Operations accepts that deployed SHA only when it is still an ancestor of
+current `main` and exactly matches public health.
+
+Any runtime tree change, unavailable public health, missing ancestry, or unknown
+classification follows the existing fail-closed deployment path. Runtime changes
+still create a new exact-SHA release and invalidate exact-release validation.
+
 ## Provenance and rollback
 
 Every non-noop deployment verifies the exact CI SHA, live base ancestry,

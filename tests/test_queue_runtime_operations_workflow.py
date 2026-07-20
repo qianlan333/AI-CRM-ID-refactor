@@ -21,7 +21,8 @@ def test_queue_operations_workflow_is_manual_id_only_and_exact_release_bound() -
     assert "PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health" in source
     assert "environment: id-validation" in source
     assert "group: aicrm-id-validation-deploy" in source
-    assert "git rev-parse FETCH_HEAD" in source
+    assert 'git merge-base --is-ancestor "$EXPECTED_RELEASE_SHA" FETCH_HEAD' in source
+    assert 'test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_RELEASE_SHA"' not in source
     assert 'values != [sys.argv[2]]' in source
     assert "150.158.82.186" not in source
     assert "www.youcangogogo.com" not in source
