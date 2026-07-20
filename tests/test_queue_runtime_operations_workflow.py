@@ -153,6 +153,18 @@ def test_soak_failure_diagnostic_is_read_only_redacted_and_exact_release_bound()
     assert "terminal_rows_during_soak" in diagnostic
     assert "redact_sensitive_text" in diagnostic
     assert "target_values_redacted" in diagnostic
+    for evaluator_metric in (
+        "lost_lease_count",
+        "duplicate_provider_call_count",
+        "unexpected_real_target_count",
+        "worker_release_mismatch_count",
+        "fresh_listener_count",
+        "external_effect_eligible_oldest_pending_age_seconds",
+        "internal_event_actionable_oldest_pending_age_seconds",
+        "webhook_eligible_oldest_pending_age_seconds",
+    ):
+        assert evaluator_metric in diagnostic
+    assert diagnostic.count("unknown_after_dispatch") >= 2
     for forbidden in (
         "INSERT INTO",
         "UPDATE ",

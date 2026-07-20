@@ -483,6 +483,14 @@ jobs:
                 "queue_unknown_count",
                 "queue_eligible_count",
                 "queue_in_flight_count",
+                "lost_lease_count",
+                "duplicate_provider_call_count",
+                "unexpected_real_target_count",
+                "worker_release_mismatch_count",
+                "fresh_listener_count",
+                "external_effect_eligible_oldest_pending_age_seconds",
+                "internal_event_actionable_oldest_pending_age_seconds",
+                "webhook_eligible_oldest_pending_age_seconds",
             )
 
 
@@ -541,7 +549,7 @@ jobs:
                                    side_effect_executed,
                                    COALESCE(completed_at, updated_at) AS terminal_at
                             FROM external_effect_job
-                            WHERE status IN ('failed_terminal', 'blocked')
+                            WHERE status IN ('failed_terminal', 'blocked', 'unknown_after_dispatch')
                             UNION ALL
                             SELECT 'internal_event', id, consumer_name, status,
                                    attempt_count, max_attempts, last_error_code,
@@ -571,7 +579,7 @@ jobs:
                                    COALESCE(completed_at, updated_at)
                             FROM broadcast_jobs
                             WHERE COALESCE(NULLIF(execution_owner, ''), 'legacy_frozen') = 'legacy_frozen'
-                              AND status IN ('failed', 'failed_terminal', 'blocked')
+                              AND status IN ('failed', 'failed_terminal', 'blocked', 'unknown_after_dispatch')
                         ) terminal
                         WHERE terminal_at >= :started_at
                           AND terminal_at <= COALESCE(:completed_at, CURRENT_TIMESTAMP)
