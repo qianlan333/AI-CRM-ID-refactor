@@ -1948,6 +1948,35 @@ def test_broadcast_queue_worker_systemd_units_are_deployable():
     assert "Unit=openclaw-broadcast-queue-worker.service" in timer
 
 
+def test_next_broadcast_and_group_ops_successor_units_are_deployable() -> None:
+    broadcast_service = (
+        ROOT / "deploy" / "aicrm-next-broadcast-delegation.service"
+    ).read_text(encoding="utf-8")
+    broadcast_timer = (
+        ROOT / "deploy" / "aicrm-next-broadcast-delegation.timer"
+    ).read_text(encoding="utf-8")
+    group_ops_service = (
+        ROOT / "deploy" / "aicrm-next-group-ops-planning.service"
+    ).read_text(encoding="utf-8")
+    group_ops_timer = (
+        ROOT / "deploy" / "aicrm-next-group-ops-planning.timer"
+    ).read_text(encoding="utf-8")
+
+    for service in (broadcast_service, group_ops_service):
+        assert "After=network.target openclaw-wecom-postgres.service" in service
+        assert "Requires=openclaw-wecom-postgres.service" in service
+        assert "EnvironmentFile=/home/ubuntu/.openclaw-wecom-pg.env" in service
+        assert "WorkingDirectory=/home/ubuntu/极简 crm" in service
+        assert "wecom_ability_service" not in service
+        assert "legacy_flask_app" not in service
+    assert "python scripts/run_broadcast_queue_worker.py" in broadcast_service
+    assert "python scripts/run_automation_ops_scheduler.py" in group_ops_service
+    assert "Unit=aicrm-next-broadcast-delegation.service" in broadcast_timer
+    assert "Unit=aicrm-next-group-ops-planning.service" in group_ops_timer
+    assert "Persistent=true" in broadcast_timer
+    assert "Persistent=true" in group_ops_timer
+
+
 def test_archive_sync_systemd_units_are_deployable():
     service = (ROOT / "deploy" / "aicrm-archive-sync.service").read_text(encoding="utf-8")
     timer = (ROOT / "deploy" / "aicrm-archive-sync.timer").read_text(encoding="utf-8")

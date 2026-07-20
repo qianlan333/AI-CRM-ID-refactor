@@ -1,6 +1,11 @@
 # Automation Ops Scheduler
 
-`scripts/run_automation_ops_scheduler.py` is now the production scheduler entry for group_ops only. It creates due `external_effect_job` rows with `effect_type=wecom.message.group.send`; historical `broadcast_jobs` remain read-only compatibility records. Real WeCom group delivery is handled by the External Effect worker and the `wecom_group_message` adapter guard.
+`scripts/run_automation_ops_scheduler.py` is now the production scheduler entry
+for group_ops only. `aicrm-next-group-ops-planning.timer` is its sole automatic
+owner after cutover. It creates due `external_effect_job` rows with
+`effect_type=wecom.message.group.send`; historical `broadcast_jobs` remain
+read-only compatibility records. Real WeCom group delivery is handled by the
+External Effect worker and the `wecom_group_message` adapter guard.
 
 ## group_ops due_at
 
@@ -79,14 +84,17 @@ Do not use group_ops run-due or direct queue writes to stand in for automatic sc
 
 ## systemd
 
-Install and enable the scheduler timer alongside the existing broadcast worker:
+The deployment manifest installs and enables the reviewed Next successor after
+the generation cutover is committed:
 
 ```bash
-sudo cp deploy/openclaw-automation-ops-scheduler.service /etc/systemd/system/
-sudo cp deploy/openclaw-automation-ops-scheduler.timer /etc/systemd/system/
+sudo cp deploy/aicrm-next-group-ops-planning.service /etc/systemd/system/
+sudo cp deploy/aicrm-next-group-ops-planning.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now openclaw-automation-ops-scheduler.timer
-sudo systemctl status openclaw-automation-ops-scheduler.timer
+sudo systemctl enable --now aicrm-next-group-ops-planning.timer
+sudo systemctl status aicrm-next-group-ops-planning.timer
 ```
 
 The timer runs every minute. Idempotency makes this safe even when no tasks are due.
+`openclaw-automation-ops-scheduler.timer` remains disabled as a retired legacy
+owner and is never a rollback path.

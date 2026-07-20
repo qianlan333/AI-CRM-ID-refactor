@@ -34,6 +34,74 @@ PR3_LEGACY_PERSISTENT_SERVICES = (
 )
 PR3_REPLACEMENT_TIMER_OWNERS = (
     ("aicrm-ai-audience-daily-intent.timer", "aicrm-ai-audience-daily-intent.service"),
+    ("aicrm-next-broadcast-delegation.timer", "aicrm-next-broadcast-delegation.service"),
+    ("aicrm-next-group-ops-planning.timer", "aicrm-next-group-ops-planning.service"),
+)
+PR3_SUCCESSOR_OWNERS = (
+    (
+        "openclaw-internal-event-worker.timer",
+        "internal_event_dispatch",
+        "persistent_service",
+        "aicrm-internal-queue-runtime.service",
+        "queue_worker_heartbeat:aicrm-internal_event-runtime",
+        "internal_event_consumer_run",
+    ),
+    (
+        "openclaw-external-effect-worker.timer",
+        "external_effect_dispatch",
+        "persistent_service",
+        "aicrm-external-queue-runtime.service",
+        "queue_worker_heartbeat:aicrm-external_effect-runtime",
+        "external_effect_job",
+    ),
+    (
+        "openclaw-broadcast-queue-worker.timer",
+        "broadcast_external_effect_delegation",
+        "timer",
+        "aicrm-next-broadcast-delegation.timer",
+        "systemd_timer:aicrm-next-broadcast-delegation.timer",
+        "broadcast_jobs",
+    ),
+    (
+        "openclaw-ai-audience-scheduler.timer",
+        "ai_audience_daily_intent",
+        "timer",
+        "aicrm-ai-audience-daily-intent.timer",
+        "systemd_timer:aicrm-ai-audience-daily-intent.timer",
+        "ai_audience_package_intent",
+    ),
+    (
+        "openclaw-identity-resolution-worker.timer",
+        "identity_resolution_effect_execution",
+        "persistent_service",
+        "aicrm-external-queue-runtime.service",
+        "queue_worker_heartbeat:aicrm-external_effect-runtime",
+        "crm_user_identity_resolution_queue+external_effect_job",
+    ),
+    (
+        "openclaw-customer-read-model-refresh.timer",
+        "customer_read_model_refresh",
+        "persistent_service",
+        "aicrm-internal-queue-runtime.service",
+        "queue_worker_heartbeat:aicrm-internal_event-runtime",
+        "customer_read_model_refresh_intent+internal_event_consumer_run",
+    ),
+    (
+        "openclaw-automation-ops-scheduler.timer",
+        "group_ops_effect_graph_planning",
+        "timer",
+        "aicrm-next-group-ops-planning.timer",
+        "systemd_timer:aicrm-next-group-ops-planning.timer",
+        "automation_group_ops_plan+automation_group_ops_effect_graph",
+    ),
+    (
+        "openclaw-wecom-callback-inbox-worker.service",
+        "wecom_callback_inbox_dispatch",
+        "persistent_service",
+        "aicrm-inbox-queue-runtime.service",
+        "queue_worker_heartbeat:aicrm-webhook_inbox-runtime",
+        "webhook_inbox",
+    ),
 )
 REQUIRED_RUNTIME_HEARTBEATS = (
     "aicrm-internal_event-runtime",
@@ -1065,6 +1133,7 @@ __all__ = [
     "PR3_LEGACY_TIMER_OWNERS",
     "PR3_OWNER_INVENTORY_NAME",
     "PR3_REPLACEMENT_TIMER_OWNERS",
+    "PR3_SUCCESSOR_OWNERS",
     "REQUIRED_RUNTIME_HEARTBEATS",
     "GenerationActivation",
     "CutoverFreeze",

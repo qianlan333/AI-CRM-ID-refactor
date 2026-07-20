@@ -45406,6 +45406,20 @@
       "unit": "aicrm-internal-queue-runtime.service"
     },
     {
+      "kind": "timer",
+      "owner_inventory": "pr3",
+      "service": "aicrm-next-broadcast-delegation.service",
+      "state": "cutover_replacement_autostart",
+      "unit": "aicrm-next-broadcast-delegation.timer"
+    },
+    {
+      "kind": "timer",
+      "owner_inventory": "pr3",
+      "service": "aicrm-next-group-ops-planning.service",
+      "state": "cutover_replacement_autostart",
+      "unit": "aicrm-next-group-ops-planning.timer"
+    },
+    {
       "kick_after_timer_restart": false,
       "kick_failure_fatal": false,
       "kind": "timer",

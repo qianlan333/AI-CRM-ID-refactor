@@ -2026,6 +2026,7 @@
         "tests/conftest.py",
         "tests/test_architecture_size_budgets.py",
         "tests/test_ai_audience_runtime_hotfixes.py",
+        "tests/test_active_deploy_services_next_native.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
         "tests/test_github_actions_expression_length.py",
@@ -2065,6 +2066,7 @@
       ],
       "python_tests": [
         "tests/test_architecture_size_budgets.py",
+        "tests/test_active_deploy_services_next_native.py",
         "tests/test_ai_audience_runtime_hotfixes.py",
         "tests/test_ci_workflow_contract.py",
         "tests/test_deploy_workflow_contract.py",
