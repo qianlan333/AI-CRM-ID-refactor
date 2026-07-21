@@ -379,6 +379,74 @@ jobs:
                     ).bindparams(bindparam("job_ids", expanding=True)),
                     {"job_ids": job_ids},
                 ).mappings().all()
+                recent_add_callbacks = session.execute(
+                    text(
+                        """
+                        WITH reference AS (
+                            SELECT id, received_at, payload_json
+                            FROM webhook_inbox
+                            WHERE id = :reference_id
+                        )
+                        SELECT candidate.id, candidate.status,
+                               candidate.duplicate_count, candidate.attempt_count,
+                               candidate.worker_generation, candidate.last_error_code,
+                               candidate.received_at,
+                               candidate.policy_version = :policy_version AS policy_version_match,
+                               EXTRACT(
+                                   EPOCH FROM (candidate.received_at - reference.received_at)
+                               )::BIGINT AS seconds_after_reference,
+                               CASE
+                                   WHEN jsonb_typeof(
+                                       candidate.processing_summary_json->'external_effect_job_ids'
+                                   ) = 'array'
+                                   THEN jsonb_array_length(
+                                       candidate.processing_summary_json->'external_effect_job_ids'
+                                   )
+                                   ELSE 0
+                               END AS external_effect_job_count,
+                               NULLIF(reference.payload_json->>'CorpId', '') IS NOT NULL
+                                   AND candidate.payload_json->>'CorpId'
+                                       = reference.payload_json->>'CorpId' AS corp_match,
+                               NULLIF(reference.payload_json->>'ExternalUserID', '') IS NOT NULL
+                                   AND candidate.payload_json->>'ExternalUserID'
+                                       = reference.payload_json->>'ExternalUserID' AS target_match,
+                               NULLIF(reference.payload_json->>'UserID', '') IS NOT NULL
+                                   AND candidate.payload_json->>'UserID'
+                                       = reference.payload_json->>'UserID' AS owner_match,
+                               NULLIF(reference.payload_json->>'State', '') IS NOT NULL
+                                   AND candidate.payload_json->>'State'
+                                       = reference.payload_json->>'State' AS scene_match,
+                               NULLIF(reference.payload_json->>'CorpId', '') IS NOT NULL
+                                   AND NULLIF(reference.payload_json->>'ExternalUserID', '') IS NOT NULL
+                                   AND NULLIF(reference.payload_json->>'UserID', '') IS NOT NULL
+                                   AND NULLIF(reference.payload_json->>'State', '') IS NOT NULL
+                                   AND candidate.payload_json->>'CorpId'
+                                       = reference.payload_json->>'CorpId'
+                                   AND candidate.payload_json->>'ExternalUserID'
+                                       = reference.payload_json->>'ExternalUserID'
+                                   AND candidate.payload_json->>'UserID'
+                                       = reference.payload_json->>'UserID'
+                                   AND candidate.payload_json->>'State'
+                                       = reference.payload_json->>'State'
+                                   AS exact_canary_tuple_match
+                        FROM webhook_inbox candidate
+                        CROSS JOIN reference
+                        WHERE candidate.id > reference.id
+                          AND candidate.provider = 'wecom'
+                          AND candidate.event_family = 'external_contact'
+                          AND candidate.route = '/wecom/external-contact/callback'
+                          AND candidate.event_type = 'change_external_contact'
+                          AND candidate.change_type = 'add_external_contact'
+                          AND candidate.received_at >= CURRENT_TIMESTAMP - INTERVAL '7 days'
+                        ORDER BY candidate.id DESC
+                        LIMIT 50
+                        """
+                    ),
+                    {
+                        "reference_id": int(selected["id"]),
+                        "policy_version": policy_version,
+                    },
+                ).mappings().all()
                 attempts = session.execute(
                     text(
                         """
@@ -411,6 +479,9 @@ jobs:
                 "attempt_real_external_call_count": sum(
                     bool(row["real_external_call_executed"]) for row in attempts
                 ),
+                "recent_add_callback_mismatch_matrix": [
+                    dict(row) for row in recent_add_callbacks
+                ],
             }
             print(json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True))
             PY
