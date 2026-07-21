@@ -113,6 +113,12 @@ def test_callback_canary_diagnostic_is_read_only_redacted_and_exact_release_boun
     assert "processing_summary_json->'external_effect_job_ids'" in diagnostic
     assert "provider_boundary_count" in diagnostic
     assert "side_effect_executed_count" in diagnostic
+    assert "recent_add_callback_mismatch_matrix" in diagnostic
+    assert "exact_canary_tuple_match" in diagnostic
+    assert "target_match" in diagnostic
+    assert "owner_match" in diagnostic
+    assert "scene_match" in diagnostic
+    assert "corp_match" in diagnostic
     assert "target_values_redacted" in diagnostic
     for forbidden in (
         "INSERT INTO",
