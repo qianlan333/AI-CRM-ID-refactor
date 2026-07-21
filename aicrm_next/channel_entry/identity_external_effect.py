@@ -16,14 +16,36 @@ from .identity_bridge_service import build_identity_bridge_service
 
 
 IDENTITY_RESOLVED_EVENT_TYPE = "identity.resolved"
+IDENTITY_RESOLUTION_BUSINESS_TYPE = "identity_resolution_queue"
 
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def _positive_int(value: Any) -> int:
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0
+
+
+def _identity_resolution_queue_id(job) -> int:
+    payload = dict(job.payload_json or {})
+    payload_queue_id = _positive_int(payload.get("queue_id"))
+    business_queue_id = _positive_int(job.business_id)
+    if payload_queue_id and business_queue_id and payload_queue_id != business_queue_id:
+        return 0
+    return payload_queue_id or business_queue_id
+
+
 def _matches(job, _result) -> bool:
-    return job.effect_type == WECOM_EXTERNAL_CONTACT_DETAIL_FETCH
+    return (
+        job.effect_type == WECOM_EXTERNAL_CONTACT_DETAIL_FETCH
+        and _text(job.business_type) == IDENTITY_RESOLUTION_BUSINESS_TYPE
+        and _identity_resolution_queue_id(job) > 0
+    )
 
 
 def _matches_terminal_identity(job, result) -> bool:
@@ -31,8 +53,7 @@ def _matches_terminal_identity(job, result) -> bool:
 
 
 def _settle_terminal_identity(job, _dispatch_result) -> dict[str, Any]:
-    payload = dict(job.payload_json or {})
-    queue_id = int(payload.get("queue_id") or job.business_id or 0)
+    queue_id = _identity_resolution_queue_id(job)
     if queue_id <= 0:
         return {"ok": False, "error": "identity_resolution_queue_id_missing"}
     target_status = {
@@ -111,7 +132,7 @@ def _run(job, dispatch_result) -> dict[str, Any]:
 
 def _run_private(job, dispatch_result) -> dict[str, Any]:
     payload = dict(job.payload_json or {})
-    queue_id = int(payload.get("queue_id") or job.business_id or 0)
+    queue_id = _identity_resolution_queue_id(job)
     attempt_id = _text(job.last_attempt_id)
     if queue_id <= 0 or not attempt_id:
         return {"ok": False, "error": "identity_resolution_completion_identifiers_missing"}
