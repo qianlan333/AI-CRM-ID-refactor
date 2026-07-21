@@ -539,6 +539,14 @@ jobs:
             from aicrm_next.shared.db_session import get_session_factory
 
 
+            def positive_int(value):
+                try:
+                    parsed = int(value or 0)
+                except (TypeError, ValueError):
+                    return 0
+                return parsed if parsed > 0 else 0
+
+
             with get_session_factory()() as session:
                 session.execute(text("SET TRANSACTION READ ONLY"))
                 failed = session.execute(
@@ -562,7 +570,7 @@ jobs:
                     text(
                         """
                         SELECT id, effect_type, status, attempt_count, max_attempts,
-                               business_id,
+                               business_type, business_id,
                                last_attempt_id, last_error_code,
                                provider_call_started_at IS NOT NULL AS provider_boundary_started,
                                side_effect_executed,
@@ -574,9 +582,25 @@ jobs:
                     ),
                     {"job_id": job_id},
                 ).mappings().one()
-                queue_id = int(job["queue_id"] or job["business_id"] or 0)
+                queue_id = positive_int(job["queue_id"])
+                if not queue_id and str(job["business_type"] or "") == "identity_resolution_queue":
+                    queue_id = positive_int(job["business_id"])
                 if queue_id <= 0:
-                    raise SystemExit("identity continuation queue id is missing")
+                    print(
+                        json.dumps(
+                            {
+                                "read_only": True,
+                                "target_values_redacted": True,
+                                "identity_scope_match": False,
+                                "failed_consumer": dict(failed),
+                                "external_effect_job": dict(job),
+                            },
+                            ensure_ascii=False,
+                            default=str,
+                            sort_keys=True,
+                        )
+                    )
+                    raise SystemExit(0)
                 attempt = session.execute(
                     text(
                         """
