@@ -94,7 +94,7 @@ def test_customer_refresh_diagnostic_is_read_only_redacted_and_exact_release_bou
 def test_callback_canary_diagnostic_is_read_only_redacted_and_exact_release_bound() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
     diagnostic = source[
-        source.index("  diagnose_callback_canary:") : source.index("  diagnose_soak_failure:")
+        source.index("  diagnose_callback_canary:") : source.index("  diagnose_identity_continuation:")
     ]
 
     assert "- diagnose_callback_canary" in source
@@ -130,6 +130,43 @@ def test_callback_canary_diagnostic_is_read_only_redacted_and_exact_release_boun
         "raw_body",
         "external_userid",
         "corp_id",
+        "WECOM_CANARY_SPEC_B64",
+    ):
+        assert forbidden not in diagnostic
+
+
+def test_identity_continuation_diagnostic_is_read_only_redacted_and_stage_specific() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+    diagnostic = source[
+        source.index("  diagnose_identity_continuation:") : source.index("  diagnose_soak_failure:")
+    ]
+
+    assert "- diagnose_identity_continuation" in source
+    assert "inputs.operation == 'diagnose_identity_continuation'" in diagnostic
+    assert "environment: id-validation" in diagnostic
+    assert "EXPECTED_DEPLOY_HOST: 49.232.57.128" in diagnostic
+    assert "PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health" in diagnostic
+    assert "secrets.ID_VALIDATION_DEPLOY_HOST" in diagnostic
+    assert "secrets.ID_VALIDATION_DEPLOY_USER" in diagnostic
+    assert "secrets.ID_VALIDATION_DEPLOY_SSH_KEY" in diagnostic
+    assert 'git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"' in diagnostic
+    assert 'actual_public_sha" = "$EXPECTED_RELEASE_SHA"' in diagnostic
+    assert 'session.execute(text("SET TRANSACTION READ ONLY"))' in diagnostic
+    assert "external_effect_identity_continuation_consumer" in diagnostic
+    assert "provider_result_present" in diagnostic
+    assert "identity_resolution_completion_receipt" in diagnostic
+    assert "crm_user_identity_conflicts" in diagnostic
+    assert "identity_resolved_event_count" in diagnostic
+    assert "target_values_redacted" in diagnostic
+    for forbidden in (
+        "INSERT INTO",
+        "UPDATE ",
+        "DELETE FROM",
+        "qyapi.weixin.qq.com",
+        "payload_xml",
+        "payload_json AS",
+        "raw_body",
+        "target_id AS",
         "WECOM_CANARY_SPEC_B64",
     ):
         assert forbidden not in diagnostic

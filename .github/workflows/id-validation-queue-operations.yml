@@ -10,6 +10,7 @@ on:
         options:
           - diagnose_customer_refresh
           - diagnose_callback_canary
+          - diagnose_identity_continuation
           - diagnose_soak_failure
           - activate_test_loopback
           - verify_owner_state
@@ -485,6 +486,213 @@ jobs:
             }
             print(json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True))
             PY
+  diagnose_identity_continuation:
+    if: >-
+      github.repository == 'qianlan333/AI-CRM-ID-refactor' &&
+      inputs.operation == 'diagnose_identity_continuation'
+    environment: id-validation
+    runs-on: ubuntu-latest
+    env:
+      EXPECTED_REPOSITORY: qianlan333/AI-CRM-ID-refactor
+      EXPECTED_DEPLOY_HOST: 49.232.57.128
+      EXPECTED_SSH_HOST_FINGERPRINT: SHA256:NXSJUveGoNy1lDsa+eOKho1h0ythB+pKTyijv8/KfU0
+      EXPECTED_RELEASE_SHA: ${{ inputs.expected_release_sha }}
+      PUBLIC_HEALTH_URL: https://id-dev.youcangogogo.com/health
+    steps:
+      - name: Read redacted identity continuation stage evidence from 49
+        env:
+          DEPLOY_HOST: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        with:
+          host: ${{ secrets.ID_VALIDATION_DEPLOY_HOST }}
+          username: ${{ secrets.ID_VALIDATION_DEPLOY_USER }}
+          key: ${{ secrets.ID_VALIDATION_DEPLOY_SSH_KEY }}
+          fingerprint: ${{ env.EXPECTED_SSH_HOST_FINGERPRINT }}
+          command_timeout: 5m
+          envs: EXPECTED_REPOSITORY,EXPECTED_DEPLOY_HOST,EXPECTED_RELEASE_SHA,PUBLIC_HEALTH_URL,DEPLOY_HOST
+          script: |
+            set -e
+            set -o pipefail
+            test "$DEPLOY_HOST" = "$EXPECTED_DEPLOY_HOST"
+            test "$EXPECTED_REPOSITORY" = "qianlan333/AI-CRM-ID-refactor"
+            printf '%s' "$EXPECTED_RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+            cd '/home/ubuntu/极简 crm'
+            test "$(git rev-parse HEAD)" = "$EXPECTED_RELEASE_SHA"
+            test "$(tr -d '\r\n' < .release-sha)" = "$EXPECTED_RELEASE_SHA"
+            test -z "$(git status --porcelain=v1 --untracked-files=all)"
+            actual_public_sha="$(
+              curl --retry 3 --retry-all-errors --connect-timeout 10 --max-time 30 -fsS \
+                -D - -o /dev/null "$PUBLIC_HEALTH_URL" |
+                awk 'tolower($1) == "x-aicrm-release-sha:" {print $2}' |
+                tr -d '\r'
+            )"
+            test "$actual_public_sha" = "$EXPECTED_RELEASE_SHA"
+            set -a
+            source /home/ubuntu/.openclaw-wecom-pg.env
+            set +a
+            source /home/ubuntu/venvs/openclaw/bin/activate
+            python3 - <<'PY'
+            import json
+
+            from sqlalchemy import text
+
+            from aicrm_next.shared.db_session import get_session_factory
+
+
+            with get_session_factory()() as session:
+                session.execute(text("SET TRANSACTION READ ONLY"))
+                failed = session.execute(
+                    text(
+                        """
+                        SELECT run.id AS consumer_run_id, run.event_id, run.status,
+                               run.attempt_count, run.max_attempts, run.last_error_code,
+                               event.event_type, CAST(event.aggregate_id AS BIGINT) AS job_id,
+                               event.occurred_at, run.finished_at
+                        FROM internal_event_consumer_run run
+                        JOIN internal_event event ON event.event_id = run.event_id
+                        WHERE run.consumer_name = 'external_effect_identity_continuation_consumer'
+                          AND run.status IN ('failed_terminal', 'blocked')
+                        ORDER BY COALESCE(run.finished_at, run.updated_at) DESC, run.id DESC
+                        LIMIT 1
+                        """
+                    )
+                ).mappings().one()
+                job_id = int(failed["job_id"])
+                job = session.execute(
+                    text(
+                        """
+                        SELECT id, effect_type, status, attempt_count, max_attempts,
+                               last_attempt_id, last_error_code,
+                               provider_call_started_at IS NOT NULL AS provider_boundary_started,
+                               side_effect_executed,
+                               CAST(NULLIF(payload_json->>'queue_id', '') AS BIGINT) AS queue_id,
+                               CAST(NULLIF(payload_json->>'event_log_id', '') AS BIGINT) AS event_log_id
+                        FROM external_effect_job
+                        WHERE id = :job_id
+                        """
+                    ),
+                    {"job_id": job_id},
+                ).mappings().one()
+                attempt = session.execute(
+                    text(
+                        """
+                        SELECT status, adapter_mode, error_code,
+                               COALESCE(provider_result_json, '{}'::jsonb) <> '{}'::jsonb AS provider_result_present,
+                               COALESCE(provider_result_json->'external_contact', '{}'::jsonb) ? 'external_userid'
+                                   AS provider_external_userid_present,
+                               COALESCE(provider_result_json->'external_contact', '{}'::jsonb) ? 'unionid'
+                                   AS provider_unionid_key_present,
+                               COALESCE(NULLIF(provider_result_json->'external_contact'->>'unionid', ''), '') <> ''
+                                   AS provider_unionid_present,
+                               jsonb_array_length(COALESCE(provider_result_json->'follow_user', '[]'::jsonb))
+                                   AS provider_follow_user_count,
+                               provider_result_consumed_at IS NOT NULL AS provider_result_consumed,
+                               COALESCE((response_summary_json->>'provider_result_received')::boolean, FALSE)
+                                   AS provider_result_received,
+                               COALESCE((response_summary_json->>'real_external_call_executed')::boolean, FALSE)
+                                   AS real_external_call_executed
+                        FROM external_effect_attempt
+                        WHERE attempt_id = :attempt_id
+                          AND job_id = :job_id
+                        """
+                    ),
+                    {"attempt_id": job["last_attempt_id"], "job_id": job_id},
+                ).mappings().one()
+                queue = session.execute(
+                    text(
+                        """
+                        SELECT id, status, reason, external_effect_job_id,
+                               resolved_unionid <> '' AS resolved_unionid_present,
+                               conflict_reason, completed_at IS NOT NULL AS completed,
+                               row_version
+                        FROM crm_user_identity_resolution_queue
+                        WHERE id = :queue_id
+                          AND external_effect_job_id = :job_id
+                        """
+                    ),
+                    {"queue_id": int(job["queue_id"]), "job_id": job_id},
+                ).mappings().one()
+                identity = session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) AS row_count,
+                               COALESCE(BOOL_OR(unionid <> ''), FALSE) AS unionid_present,
+                               COALESCE(BOOL_OR(primary_openid <> ''), FALSE) AS openid_present,
+                               COALESCE(BOOL_OR(jsonb_array_length(follow_users_json) > 0), FALSE)
+                                   AS follow_users_present
+                        FROM crm_user_identity
+                        WHERE external_userids_json @> jsonb_build_array(
+                            (SELECT target_id FROM external_effect_job WHERE id = :job_id)
+                        )
+                        """
+                    ),
+                    {"job_id": job_id},
+                ).mappings().one()
+                conflicts = session.execute(
+                    text(
+                        """
+                        SELECT conflict_type, status, resolution_status, COUNT(*) AS row_count
+                        FROM crm_user_identity_conflicts
+                        WHERE external_userid = (
+                            SELECT target_id FROM external_effect_job WHERE id = :job_id
+                        )
+                        GROUP BY conflict_type, status, resolution_status
+                        ORDER BY conflict_type, status, resolution_status
+                        """
+                    ),
+                    {"job_id": job_id},
+                ).mappings().all()
+                runtime = session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) AS row_count,
+                               ARRAY_AGG(DISTINCT identity_status ORDER BY identity_status) AS identity_statuses,
+                               ARRAY_AGG(DISTINCT runtime_status ORDER BY runtime_status) AS runtime_statuses,
+                               COALESCE(BOOL_OR(unionid <> ''), FALSE) AS unionid_present
+                        FROM automation_channel_entry_runtime
+                        WHERE identity_external_effect_job_id = :job_id
+                           OR event_log_id = :event_log_id
+                        """
+                    ),
+                    {"job_id": job_id, "event_log_id": int(job["event_log_id"] or 0)},
+                ).mappings().one()
+                projections = session.execute(
+                    text(
+                        """
+                        SELECT
+                            (SELECT COUNT(*) FROM identity_resolution_completion_receipt
+                             WHERE external_effect_job_id = :job_id) AS completion_receipt_count,
+                            (SELECT COUNT(*) FROM internal_event
+                             WHERE event_type = 'identity.resolved'
+                               AND aggregate_type = 'crm_user_identity_resolution_queue'
+                               AND aggregate_id = CAST(:queue_id AS TEXT)) AS identity_resolved_event_count,
+                            (SELECT COUNT(*) FROM automation_channel_contact contact
+                             WHERE contact.unionid IN (
+                                 SELECT identity.unionid
+                                 FROM crm_user_identity identity
+                                 WHERE identity.external_userids_json @> jsonb_build_array(
+                                     (SELECT target_id FROM external_effect_job WHERE id = :job_id)
+                                 )
+                             )) AS channel_contact_count
+                        """
+                    ),
+                    {"job_id": job_id, "queue_id": int(job["queue_id"])},
+                ).mappings().one()
+
+            payload = {
+                "read_only": True,
+                "target_values_redacted": True,
+                "failed_consumer": dict(failed),
+                "external_effect_job": dict(job),
+                "external_effect_attempt": dict(attempt),
+                "identity_resolution_queue": dict(queue),
+                "canonical_identity": dict(identity),
+                "identity_conflicts": [dict(row) for row in conflicts],
+                "channel_entry_runtime": dict(runtime),
+                "downstream_projections": dict(projections),
+            }
+            print(json.dumps(payload, ensure_ascii=False, default=str, sort_keys=True))
+            PY
   diagnose_soak_failure:
     if: >-
       github.repository == 'qianlan333/AI-CRM-ID-refactor' &&
@@ -699,6 +907,7 @@ jobs:
       github.repository == 'qianlan333/AI-CRM-ID-refactor' &&
       inputs.operation != 'diagnose_customer_refresh' &&
       inputs.operation != 'diagnose_callback_canary' &&
+      inputs.operation != 'diagnose_identity_continuation' &&
       inputs.operation != 'diagnose_soak_failure'
     environment: id-validation
     runs-on: ubuntu-latest
