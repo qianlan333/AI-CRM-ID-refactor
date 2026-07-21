@@ -562,6 +562,7 @@ jobs:
                     text(
                         """
                         SELECT id, effect_type, status, attempt_count, max_attempts,
+                               business_id,
                                last_attempt_id, last_error_code,
                                provider_call_started_at IS NOT NULL AS provider_boundary_started,
                                side_effect_executed,
@@ -573,6 +574,9 @@ jobs:
                     ),
                     {"job_id": job_id},
                 ).mappings().one()
+                queue_id = int(job["queue_id"] or job["business_id"] or 0)
+                if queue_id <= 0:
+                    raise SystemExit("identity continuation queue id is missing")
                 attempt = session.execute(
                     text(
                         """
@@ -610,7 +614,7 @@ jobs:
                           AND external_effect_job_id = :job_id
                         """
                     ),
-                    {"queue_id": int(job["queue_id"]), "job_id": job_id},
+                    {"queue_id": queue_id, "job_id": job_id},
                 ).mappings().one()
                 identity = session.execute(
                     text(
@@ -676,7 +680,7 @@ jobs:
                              )) AS channel_contact_count
                         """
                     ),
-                    {"job_id": job_id, "queue_id": int(job["queue_id"])},
+                    {"job_id": job_id, "queue_id": queue_id},
                 ).mappings().one()
 
             payload = {

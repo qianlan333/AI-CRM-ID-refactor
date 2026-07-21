@@ -153,6 +153,7 @@ def test_identity_continuation_diagnostic_is_read_only_redacted_and_stage_specif
     assert 'actual_public_sha" = "$EXPECTED_RELEASE_SHA"' in diagnostic
     assert 'session.execute(text("SET TRANSACTION READ ONLY"))' in diagnostic
     assert "external_effect_identity_continuation_consumer" in diagnostic
+    assert 'queue_id = int(job["queue_id"] or job["business_id"] or 0)' in diagnostic
     assert "provider_result_present" in diagnostic
     assert "identity_resolution_completion_receipt" in diagnostic
     assert "crm_user_identity_conflicts" in diagnostic
